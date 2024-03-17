@@ -44,7 +44,7 @@ std::string get_domain(const uint8_t* const orig, const uint8_t*& data)
         }
         else if (3 == type)
         {
-            curr = orig + ((static_cast<int>(*curr) & 0b00111111) << 8) + curr[1];
+            curr = orig + (static_cast<uint16_t>(*curr & 0b00111111) << 8) + curr[1];
             if (!compressed)
             {
                 data += 2;
@@ -211,7 +211,7 @@ void DNSBuffer::append(const DNSAnswer& val)
     append_uint16(val.type);
     append_uint16(val.cls);
     append_uint32(val.ttl);
-    append_uint16(val.data.size());
+    append_uint16(static_cast<uint16_t>(val.data.size()));
     result.insert(result.end(), val.data.begin(), val.data.end());
 }
 
