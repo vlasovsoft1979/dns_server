@@ -60,6 +60,26 @@ public:
     std::vector<uint8_t> data;
 };
 
+struct DNSAuthorityServer
+{
+public:
+    DNSAuthorityServer(const uint8_t* const orig, const uint8_t*& data);
+
+public:
+    std::string name;
+    uint16_t type;
+    uint16_t cls;
+    uint32_t ttl;
+    uint16_t len;
+    std::string primary;
+    std::string mbox;
+    uint32_t serial;
+    uint32_t refresh;
+    uint32_t retry;
+    uint32_t expire;
+    uint32_t ttl_min;
+};
+
 class DNSPackage
 {
 public:
@@ -69,6 +89,7 @@ public:
     DNSHeader header;
     std::vector<DNSRequest> requests;
     std::vector<DNSAnswer> answers;
+    std::vector<DNSAuthorityServer> authorities;
 };
 
 class DNSBuffer
@@ -84,6 +105,7 @@ private:
     void append(const DNSHeader& val);
     void append(const DNSRequest& val);
     void append(const DNSAnswer& val);
+    void append(const DNSAuthorityServer& val);
     void append_domain(const std::string& str);
     void append_label(const std::string& str);
     void append_uint16(const uint16_t val);

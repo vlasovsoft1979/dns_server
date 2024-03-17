@@ -96,6 +96,22 @@ DNSAnswer::DNSAnswer(const uint8_t* const orig, const uint8_t*& data)
     data += len;
 }
 
+DNSAuthorityServer::DNSAuthorityServer(const uint8_t* const orig, const uint8_t*& data)
+    : name(get_domain(orig, data))
+    , type(get_uint16(data))
+    , cls(get_uint16(data))
+    , ttl(get_uint32(data))
+    , len(get_uint16(data))
+    , primary(get_domain(orig, data))
+    , mbox(get_domain(orig, data))
+    , serial(get_uint32(data))
+    , refresh(get_uint32(data))
+    , retry(get_uint32(data))
+    , expire(get_uint32(data))
+    , ttl_min(get_uint32(data))
+{
+}
+
 DNSPackage::DNSPackage(const uint8_t* data)
 {
     const uint8_t* orig = data;
@@ -107,6 +123,10 @@ DNSPackage::DNSPackage(const uint8_t* data)
     for (auto i = 0; i < header.ANCOUNT; ++i)
     {
         answers.emplace_back(DNSAnswer{ orig, data });
+    }
+    for (auto i = 0; i < header.NSCOUNT; ++i)
+    {
+        authorities.emplace_back(DNSAuthorityServer{ orig, data });
     }
 }
 
@@ -142,13 +162,17 @@ DNSBuffer::DNSBuffer()
 void DNSBuffer::append(const DNSPackage& val)
 {
     append(val.header);
-    for (const auto& query : val.requests)
+    for (const auto& elem : val.requests)
     {
-        append(query);
+        append(elem);
     }
-    for (const auto& answer : val.answers)
+    for (const auto& elem : val.answers)
     {
-        append(answer);
+        append(elem);
+    }
+    for (const auto& elem : val.authorities)
+    {
+        append(elem);
     }
 }
 
@@ -189,6 +213,22 @@ void DNSBuffer::append(const DNSAnswer& val)
     append_uint32(val.ttl);
     append_uint16(val.data.size());
     result.insert(result.end(), val.data.begin(), val.data.end());
+}
+
+void DNSBuffer::append(const DNSAuthorityServer& val)
+{
+    append_domain(val.name);
+    append_uint16(val.type);
+    append_uint16(val.cls);
+    append_uint32(val.ttl);
+    append_uint16(val.len);
+    append_domain(val.primary);
+    append_domain(val.mbox);
+    append_uint32(val.serial);
+    append_uint32(val.refresh);
+    append_uint32(val.retry);
+    append_uint32(val.expire);
+    append_uint32(val.ttl_min);
 }
 
 void DNSBuffer::append_domain(const std::string& str)

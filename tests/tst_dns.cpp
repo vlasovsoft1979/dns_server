@@ -54,7 +54,7 @@ TEST(Dns, ParseQuery)
     ASSERT_EQ(pkg, toHex(buf.getResult()));
 }
 
-TEST(Dns, ParseResponse)
+TEST(Dns, ParseResponse_TypeA_Success)
 {
     std::string pkg{ "4f16818000010001000000000a766c61736f76736f6674036e65740000010001c00c0001000100000e100004b9fddb5c" };
     auto vec = fromHex(pkg);
@@ -63,6 +63,21 @@ TEST(Dns, ParseResponse)
     ASSERT_EQ(1, package.header.QDCOUNT);
     ASSERT_EQ(1, package.header.ANCOUNT);
     ASSERT_EQ(0, package.header.NSCOUNT);
+    ASSERT_EQ(0, package.header.ARCOUNT);
+    DNSBuffer buf;
+    buf.append(package);
+    ASSERT_EQ(pkg, toHex(buf.getResult()));
+}
+
+TEST(Dns, ParseResponse_TypeA_HostNotFound)
+{
+    std::string pkg{ "db2481830001000000010000086e78646f6d61696e0a766c61736f76736f6674036e65740000010001c01500060001000006fd002e056e7331303107636c6f75646e73c02007737570706f7274c03b78a4450e00001c20000007080012750000000e10" };
+    auto vec = fromHex(pkg);
+    DNSPackage package(&vec[0]);
+    ASSERT_EQ(0xdb24, package.header.ID);
+    ASSERT_EQ(1, package.header.QDCOUNT);
+    ASSERT_EQ(0, package.header.ANCOUNT);
+    ASSERT_EQ(1, package.header.NSCOUNT);
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
     buf.append(package);
