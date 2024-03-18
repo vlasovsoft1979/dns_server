@@ -18,6 +18,7 @@ int main() {
         server.addRecord(DNSRecordType::A, "microsoft.com", "3.3.3.3");
         server.addRecord(DNSRecordType::TXT, "test.com", "some text example");
         server.addRecord(DNSRecordType::MX, "test.com", "mx.test.com");
+        server.addRecord(DNSRecordType::CNAME, "alias.test.com", "real.test.com");
         server.process();
     }
     catch (const std::exception& e)

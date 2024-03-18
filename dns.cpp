@@ -253,6 +253,33 @@ private:
     std::string text;
 };
 
+class DNSAnswerExtCname : public DNSAnswerExt
+{
+public:
+    DNSAnswerExtCname(const uint8_t* const orig, const uint8_t*& data)
+    {
+        auto len = get_uint16(data);
+        text = get_domain(orig, data);
+    }
+    DNSAnswerExtCname(const std::string& text)
+        : text(text)
+    {}
+    virtual void append(DNSBuffer& buf) override
+    {
+        size_t pos = buf.result.size();
+        buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
+        buf.append_domain(text);
+        // little hack: overwrite calculated size
+        size_t size = buf.result.size() - pos - 2;
+        if (size != 0)
+        {
+            *reinterpret_cast<uint16_t*>(&buf.result[pos]) = htons(static_cast<uint16_t>(size));
+        }
+    }
+
+private:
+    std::string text;
+};
 
 DNSAnswer::DNSAnswer()
     : type(0)
@@ -276,6 +303,9 @@ DNSAnswer::DNSAnswer(const uint8_t* const orig, const uint8_t*& data)
         break;
     case DNSRecordType::TXT:
         ext = std::make_shared<DNSAnswerExtTxt>(orig, data);
+        break;
+    case DNSRecordType::CNAME:
+        ext = std::make_shared<DNSAnswerExtCname>(orig, data);
         break;
     default:
         break;
@@ -418,6 +448,17 @@ void DNSPackage::addAnswerTypeMx(const std::string& name, const std::string& hos
     answer.cls = 1;
     answer.ttl = 3600;
     answer.ext = std::make_shared<DNSAnswerExtMx>(host);
+    answers.push_back(answer);
+}
+
+void DNSPackage::addAnswerTypeCname(const std::string& name, const std::string& host)
+{
+    DNSAnswer answer;
+    answer.name = name;
+    answer.type = static_cast<uint16_t>(DNSRecordType::CNAME);
+    answer.cls = 1;
+    answer.ttl = 3600;
+    answer.ext = std::make_shared<DNSAnswerExtCname>(host);
     answers.push_back(answer);
 }
 
@@ -595,6 +636,9 @@ public:
                         break;
                     case DNSRecordType::TXT:
                         package.addAnswerTypeTxt(query.name, iter->second);
+                        break;
+                    case DNSRecordType::CNAME:
+                        package.addAnswerTypeCname(query.name, iter->second);
                         break;
                     default:
                         package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NotImplemented);

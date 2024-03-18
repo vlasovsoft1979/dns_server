@@ -166,6 +166,21 @@ TEST(Dns, ParseResponse_TypeTXT_HostNotFound)
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 
+TEST(Dns, ParseResponse_TypeCNAME_Success)
+{
+    std::string pkg{ "09178180000100010000000005636d61696c0a766c61736f76736f6674036e65740000050001c00c0005000100000e100007046d61696cc012" };
+    auto vec = fromHex(pkg);
+    DNSPackage package(&vec[0]);
+    ASSERT_EQ(0x0917, package.header.ID);
+    ASSERT_EQ(1, package.header.QDCOUNT);
+    ASSERT_EQ(1, package.header.ANCOUNT);
+    ASSERT_EQ(0, package.header.NSCOUNT);
+    ASSERT_EQ(0, package.header.ARCOUNT);
+    DNSBuffer buf;
+    package.append(buf);
+    ASSERT_EQ(pkg, toHex(buf.result));
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
