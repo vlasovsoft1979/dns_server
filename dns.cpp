@@ -241,7 +241,7 @@ public:
         buf.append(preference);
         buf.append_domain(text);
         // little hack: overwrite calculated size
-        size_t size = buf.result.size() - pos;
+        size_t size = buf.result.size() - pos - 2;
         if (size != 0)
         {
             *reinterpret_cast<uint16_t*>(&buf.result[pos]) = htons(static_cast<uint16_t>(size));
