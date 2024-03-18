@@ -1,0 +1,21 @@
+{
+  "ip": "127.0.0.1",
+  "port": 10000,
+  "records": [
+    {
+      "type": 1,
+      "host": "domain.com",
+      "response": "1.1.1.1",
+    },
+    {
+      "type": 15,
+      "host": "domain.com",
+      "response": "mx.domain.com",
+    },
+    {
+      "type": 16,
+      "host": "domain.com",
+      "response": "some text example",
+    }
+  ]
+}

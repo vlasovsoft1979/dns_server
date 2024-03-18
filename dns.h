@@ -162,6 +162,7 @@ class DNSServer
 {
 public:
     DNSServer(const std::string& host, int port);
+    DNSServer(const std::string& json);
     ~DNSServer();
 
     void addRecord(DNSRecordType type, const std::string& host, const std::string& answer);

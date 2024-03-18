@@ -2,6 +2,8 @@
 #include <ws2tcpip.h>
 #include <stdint.h>
 #include <ostream>
+#include <fstream>
+#include <json/json.h>
 
 #include "dns.h"
 
@@ -603,9 +605,10 @@ public:
         {
             char message[BUFLEN] = {};
 
-            int message_len;
+            int message_len = 0;
             int slen = sizeof(sockaddr_in);
-            if ((message_len = recvfrom(server_socket, message, BUFLEN, 0, (sockaddr*)&client, &slen)) == SOCKET_ERROR) {
+            if ((message_len = recvfrom(server_socket, message, BUFLEN, 0, (sockaddr*)&client, &slen)) == SOCKET_ERROR) 
+            {
                 throw std::runtime_error("recvfrom() failed");
             }
 
@@ -687,6 +690,35 @@ const int DNSServerImpl::BUFLEN;
 DNSServer::DNSServer(const std::string& host, int port)
     : impl(new DNSServerImpl{host, port})
 {}
+
+DNSServer::DNSServer(const std::string& jsonFile)
+{
+    Json::Value root;
+    std::ifstream ifs(jsonFile.c_str());
+    if (!ifs.is_open())
+    {
+        throw std::runtime_error("Error opening json file");
+    }
+    Json::CharReaderBuilder builder;
+    JSONCPP_STRING errs;
+    if (!parseFromStream(builder, ifs, &root, &errs)) 
+    {
+        throw std::runtime_error("Error parsing json file");
+    }
+    std::string ip = root.get("ip", "127.0.0.1").asString();
+    int port = root.get("port", 10000).asInt();
+
+    impl.reset(new DNSServerImpl{ ip, port });
+
+    const Json::Value records = root["records"];
+    for (int index = 0; index < records.size(); ++index)
+    {
+        DNSRecordType type = static_cast<DNSRecordType>(records[index].get("type", 0).asInt());
+        std::string host = records[index].get("host", "").asString();
+        std::string answer = records[index].get("response", "").asString();
+        addRecord(type, host, answer);
+    }
+}
 
 DNSServer::~DNSServer()
 {}
