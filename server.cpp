@@ -67,14 +67,26 @@ public:
                 return;
             }
 
-            DNSPackage package(message);
+            DNSPackage package(reinterpret_cast<uint8_t*>(message));
 
-            /*
-            if (sendto(server_socket, message, index, 0, (sockaddr*)&client, sizeof(sockaddr_in)) == SOCKET_ERROR) {
+            std::cout << package.header.flags.QR << std::endl;
+
+            package.header.flags.QR = 1;
+            package.header.flags.RA = 1;
+            package.header.flags.RCODE = 0;
+            package.header.ANCOUNT = 1;
+            package.header.ARCOUNT = 0;
+            package.addAnswerTypeA("vlasovsoft.net", "1.1.1.1");
+
+            DNSBuffer buf;
+            buf.append(package);
+
+            const std::vector<uint8_t> result = buf.result;
+
+            if (sendto(server_socket, reinterpret_cast<const char*>(&result[0]), static_cast<int>(result.size()), 0, (sockaddr*)&client, sizeof(sockaddr_in)) == SOCKET_ERROR) {
                 std::cerr << "sendto() failed with error code: " << WSAGetLastError() << std::endl;
                 return;
             }
-            */
         }
     }
 

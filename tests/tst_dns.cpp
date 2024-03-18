@@ -39,6 +39,25 @@ std::string toHex(const std::vector<uint8_t> vec)
     return result;
 }
 
+TEST(Dns, ParseQueryHeaderFlags)
+{
+    std::string pkg{ "0120" };
+    auto vec = fromHex(pkg);
+    const uint8_t* data = &vec[0];
+    DNSHeaderFlags flags(data);
+    ASSERT_EQ(0, flags.QR);
+    ASSERT_EQ(0, flags.Opcode);
+    ASSERT_EQ(0, flags.AA);
+    ASSERT_EQ(0, flags.TC);
+    ASSERT_EQ(1, flags.RD);
+    ASSERT_EQ(0, flags.RA);
+    ASSERT_EQ(2, flags.Z);
+    ASSERT_EQ(0, flags.RCODE);
+    DNSBuffer buf;
+    buf.append(flags);
+    ASSERT_EQ(pkg, toHex(buf.result));
+}
+
 TEST(Dns, ParseQuery)
 {
     std::string pkg{ "1cb901000001000000000000033132310a766c61736f76736f6674036e65740000010001" };
@@ -51,7 +70,7 @@ TEST(Dns, ParseQuery)
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
     buf.append(package);
-    ASSERT_EQ(pkg, toHex(buf.getResult()));
+    ASSERT_EQ(pkg, toHex(buf.result));
 }
 
 TEST(Dns, ParseResponse_TypeA_Success)
@@ -66,7 +85,7 @@ TEST(Dns, ParseResponse_TypeA_Success)
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
     buf.append(package);
-    ASSERT_EQ(pkg, toHex(buf.getResult()));
+    ASSERT_EQ(pkg, toHex(buf.result));
 }
 
 TEST(Dns, ParseResponse_TypeA_HostNotFound)
@@ -81,7 +100,7 @@ TEST(Dns, ParseResponse_TypeA_HostNotFound)
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
     buf.append(package);
-    ASSERT_EQ(pkg, toHex(buf.getResult()));
+    ASSERT_EQ(pkg, toHex(buf.result));
 }
 
 int main(int argc, char** argv)

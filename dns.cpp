@@ -1,4 +1,5 @@
 #include <winsock2.h>
+#include <ws2tcpip.h>
 #include <stdint.h>
 #include <ostream>
 
@@ -61,10 +62,21 @@ std::string get_domain(const uint8_t* const orig, const uint8_t*& data)
 
 }
 
+DNSHeaderFlags::DNSHeaderFlags()
+    : QR(0)
+    , Opcode(0)
+    , AA(0)
+    , TC(0)
+    , RD(0)
+    , RA(0)
+    , Z(0)
+    , RCODE(0)
+{}
+
 DNSHeaderFlags::DNSHeaderFlags(const uint8_t*& data)
 {
-    *this = *reinterpret_cast<const DNSHeaderFlags*>(data);
-    data += sizeof(DNSHeaderFlags);
+    uint16_t val = get_uint16(data);
+    *this = *reinterpret_cast<const DNSHeaderFlags*>(&val);
 }
 
 DNSHeader::DNSHeader(const uint8_t*& data)
@@ -130,6 +142,27 @@ DNSPackage::DNSPackage(const uint8_t* data)
     }
 }
 
+void DNSPackage::addAnswerTypeA(const std::string& name, const std::string& ip)
+{
+    DNSAnswer answer;
+    answer.name = name;
+    answer.type = 1;
+    answer.cls = 1;
+    answer.ttl = 3600;
+    std::vector<uint8_t> data;
+    sockaddr_in sa;
+    if (0 == inet_pton(AF_INET, ip.c_str(), &sa.sin_addr))
+    {
+        throw std::runtime_error("invalid IPv4 address");
+    }
+    answer.data.reserve(4);
+    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b1);
+    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b2);
+    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b3);
+    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b4);
+    answers.push_back(answer);
+}
+
 std::ostream& operator << (std::ostream& stream, const DNSHeader& header)
 {
     return stream
@@ -176,16 +209,9 @@ void DNSBuffer::append(const DNSPackage& val)
     }
 }
 
-const std::vector<uint8_t> DNSBuffer::getResult() const
-{
-    return result;
-}
-
 void DNSBuffer::append(const DNSHeaderFlags& val)
 {
-    const char* begin = reinterpret_cast<const char*>(&val);
-    const char* end = begin + sizeof(DNSHeaderFlags);
-    result.insert(result.end(), begin, end);
+    append_uint16(*reinterpret_cast<const uint16_t*>(&val));
 }
 
 void DNSBuffer::append(const DNSHeader& val)

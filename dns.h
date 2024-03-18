@@ -7,18 +7,18 @@
 struct DNSHeaderFlags
 {
 public:
-    DNSHeaderFlags() = default;
+    DNSHeaderFlags();
     DNSHeaderFlags(const uint8_t*& data);
 
 public:
-    uint16_t QR : 1;      // 0=request, 1=response
-    uint16_t Opcode : 4;  // 0=standard, 1=inverse, 2=status, 3..15=reserved
-    uint16_t AA : 1;      // response only, 1=authority answer
-    uint16_t TC : 1;      // response only, 1=truncated
-    uint16_t RD : 1;      // don't provide intermediate info
-    uint16_t RA : 1;      // response only, 1=server supports recursion
-    uint16_t Z : 3;       // reserved, always 0
     uint16_t RCODE : 4;   // response only, query result
+    uint16_t Z : 3;       // reserved, always 0
+    uint16_t RA : 1;      // response only, 1=server supports recursion
+    uint16_t RD : 1;      // 1=recursion desired
+    uint16_t TC : 1;      // response only, 1=truncated
+    uint16_t AA : 1;      // response only, 1=authority answer
+    uint16_t Opcode : 4;  // 0=standard, 1=inverse, 2=status, 3..15=reserved
+    uint16_t QR : 1;      // 0=request, 1=response
 };
 
 struct DNSHeader
@@ -50,6 +50,7 @@ public:
 struct DNSAnswer
 {
 public:
+    DNSAnswer() = default;
     DNSAnswer(const uint8_t* const orig, const uint8_t*& data);
 
 public:
@@ -85,6 +86,8 @@ class DNSPackage
 public:
     DNSPackage(const uint8_t* data);
 
+    void addAnswerTypeA(const std::string& name, const std::string& ip);
+
 public:
     DNSHeader header;
     std::vector<DNSRequest> requests;
@@ -98,9 +101,6 @@ public:
     DNSBuffer();
 
     void append(const DNSPackage& val);
-    const std::vector<uint8_t> getResult() const;
-
-private:
     void append(const DNSHeaderFlags& val);
     void append(const DNSHeader& val);
     void append(const DNSRequest& val);
@@ -111,6 +111,9 @@ private:
     void append_uint16(const uint16_t val);
     void append_uint32(const uint32_t val);
 
+public:
     std::vector<uint8_t> result;
+
+private:
     std::map<std::string, size_t> compress;
 };
