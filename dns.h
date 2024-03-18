@@ -2,7 +2,23 @@
 
 #include <vector>
 #include <string>
+#include <memory>
 #include <map>
+
+enum class DNSRecordType : uint16_t
+{
+    A = 1
+};
+
+enum class DNSResultCode
+{
+    NoError = 0,
+    FormatError = 1,
+    ServerFailure = 2,
+    NameError = 3,
+    NotImplemented = 4,
+    Refused = 5
+};
 
 struct DNSHeaderFlags
 {
@@ -116,4 +132,19 @@ public:
 
 private:
     std::map<std::string, size_t> compress;
+};
+
+class DNSServerImpl;
+
+class DNSServer
+{
+public:
+    DNSServer(const std::string& host, int port);
+    ~DNSServer();
+
+    void addRecord(DNSRecordType type, const std::string& host, const std::string& answer);
+    void process();
+
+private:
+    std::unique_ptr<DNSServerImpl> impl;
 };

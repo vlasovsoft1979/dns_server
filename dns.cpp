@@ -311,3 +311,143 @@ void DNSBuffer::append_uint32(uint32_t val)
     const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&val);
     result.insert(result.end(), ptr, ptr + sizeof(val));
 }
+
+class DNSServerImpl
+{
+    struct Request
+    {
+        DNSRecordType type;
+        std::string host;
+        Request(DNSRecordType type, const std::string& host)
+            : type(type)
+            , host(host)
+        {}
+        bool operator < (const Request& val) const
+        {
+            return type < val.type || type == val.type && host < val.host;
+        }
+    };
+
+public:
+    DNSServerImpl(const std::string& host, int port)
+        : wsa{0}
+        , server_socket{0}
+        , server{0}
+        , client{0}
+    {
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+            throw std::runtime_error("WSAStartup() failed");
+        }
+
+        if ((server_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET) {
+            throw std::runtime_error("Create socket failed");
+        }
+
+        server.sin_family = AF_INET;
+        server.sin_addr.s_addr = INADDR_ANY;
+        server.sin_port = htons(port);
+
+        if (bind(server_socket, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) {
+            throw std::runtime_error("Bind failed");
+        }
+    }
+
+    void addRecord(DNSRecordType type, const std::string& host, const std::string& answer)
+    {
+        table[Request(type, host)] = answer;
+    }
+
+    void process()
+    {
+        while (true)
+        {
+            char message[BUFLEN] = {};
+
+            int message_len;
+            int slen = sizeof(sockaddr_in);
+            if ((message_len = recvfrom(server_socket, message, BUFLEN, 0, (sockaddr*)&client, &slen)) == SOCKET_ERROR) {
+                throw std::runtime_error("recvfrom() failed");
+            }
+
+            if (message_len < sizeof(DNSHeader))
+            {
+                throw std::runtime_error("DNS packet too small");
+            }
+
+            DNSPackage package(reinterpret_cast<uint8_t*>(message));
+
+            package.header.flags.QR = 1; // answer
+            package.header.flags.RA = 1; // supports recursion
+            package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NoError);
+            for (const auto& query : package.requests)
+            {
+                DNSRecordType type = static_cast<DNSRecordType>(query.type);
+                Request req{ type, query.name };
+                const auto iter = table.find(req);
+                if (iter != table.end())
+                {
+                    switch (type)
+                    {
+                    case DNSRecordType::A:
+                        package.addAnswerTypeA(query.name, iter->second);
+                        break;
+                    default:
+                        package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NotImplemented);
+                        break;
+                    }
+                }
+                else
+                {
+                    package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NameError);
+                }
+                if (package.header.flags.RCODE != static_cast<uint16_t>(DNSResultCode::NoError))
+                {
+                    break;
+                }
+            }
+
+            if (package.header.flags.RCODE != static_cast<uint16_t>(DNSResultCode::NoError))
+            {
+                package.answers.clear();
+            }
+
+            package.header.ANCOUNT = static_cast<uint16_t>(package.answers.size());
+            package.header.ARCOUNT = 0;
+
+            DNSBuffer buf;
+            buf.append(package);
+
+            if (sendto(server_socket, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0, (sockaddr*)&client, sizeof(sockaddr_in)) == SOCKET_ERROR) 
+            {
+                throw std::runtime_error("recvfrom() failed");
+            }
+        }
+    }
+
+private:
+    WSADATA wsa;
+    SOCKET server_socket;
+    sockaddr_in server, client;
+    std::map<Request, std::string> table;
+
+    static const int BUFLEN = 512;
+};
+
+const int DNSServerImpl::BUFLEN;
+
+DNSServer::DNSServer(const std::string& host, int port)
+    : impl(new DNSServerImpl{host, port})
+{}
+
+DNSServer::~DNSServer()
+{}
+
+void DNSServer::addRecord(DNSRecordType type, const std::string& host, const std::string& answer)
+{
+    impl->addRecord(type, host, answer);
+}
+
+void DNSServer::process()
+{
+    impl->process();
+}
