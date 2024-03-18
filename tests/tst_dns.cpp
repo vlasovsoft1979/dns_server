@@ -103,6 +103,36 @@ TEST(Dns, ParseResponse_TypeA_HostNotFound)
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 
+TEST(Dns, ParseResponse_TypeMX_Success)
+{
+    std::string pkg{ "3f2c8180000100010000000006676f6f676c6503636f6d00000f0001c00c000f0001000001060009000a04736d7470c00c" };
+    auto vec = fromHex(pkg);
+    DNSPackage package(&vec[0]);
+    ASSERT_EQ(0x3f2c, package.header.ID);
+    ASSERT_EQ(1, package.header.QDCOUNT);
+    ASSERT_EQ(1, package.header.ANCOUNT);
+    ASSERT_EQ(0, package.header.NSCOUNT);
+    ASSERT_EQ(0, package.header.ARCOUNT);
+    DNSBuffer buf;
+    package.append(buf);
+    ASSERT_EQ(pkg, toHex(buf.result));
+}
+
+TEST(Dns, ParseResponse_TypeTXT_Success)
+{
+    std::string pkg{ "248c818000010001000000000a766c61736f76736f6674036e65740000100001c00c0010000100000e10000e0d763d737066312061202d616c6c" };
+    auto vec = fromHex(pkg);
+    DNSPackage package(&vec[0]);
+    ASSERT_EQ(0x248c, package.header.ID);
+    ASSERT_EQ(1, package.header.QDCOUNT);
+    ASSERT_EQ(1, package.header.ANCOUNT);
+    ASSERT_EQ(0, package.header.NSCOUNT);
+    ASSERT_EQ(0, package.header.ARCOUNT);
+    DNSBuffer buf;
+    package.append(buf);
+    ASSERT_EQ(pkg, toHex(buf.result));
+}
+
 int main(int argc, char** argv)
 {
     ::testing::InitGoogleTest(&argc, argv);
