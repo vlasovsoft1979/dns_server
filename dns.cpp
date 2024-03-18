@@ -7,17 +7,32 @@
 
 namespace {
 
+uint8_t get_uint8(const uint8_t*& data)
+{
+    uint8_t val = *data;
+    data += sizeof(uint8_t);
+    return val;
+}
+
 uint16_t get_uint16(const uint8_t*& data)
 {
     uint16_t val = ntohs(*reinterpret_cast<const uint16_t*>(data));
     data += sizeof(uint16_t);
     return val;
 }
+
 uint32_t get_uint32(const uint8_t*& data)
 {
     uint32_t val = ntohl(*reinterpret_cast<const uint32_t*>(data));
     data += sizeof(uint32_t);
     return val;
+}
+
+std::string get_string(const uint8_t*& data, size_t len)
+{
+    std::string result(reinterpret_cast<const char*>(data), len);
+    data += len;
+    return result;
 }
 
 void append_uint16(std::vector<uint8_t>& buf, uint16_t val)
@@ -93,6 +108,19 @@ DNSHeaderFlags::DNSHeaderFlags(const uint8_t*& data)
     *this = *reinterpret_cast<const DNSHeaderFlags*>(&val);
 }
 
+void DNSHeaderFlags::append(DNSBuffer& buf) const
+{
+    buf.append(*reinterpret_cast<const uint16_t*>(this));
+}
+
+DNSHeader::DNSHeader()
+    : ID(0)
+    , QDCOUNT(0)
+    , ANCOUNT(0)
+    , NSCOUNT(0)
+    , ARCOUNT(0)
+{}
+
 DNSHeader::DNSHeader(const uint8_t*& data)
     : ID(get_uint16(data))
     , flags(data)
@@ -100,15 +128,137 @@ DNSHeader::DNSHeader(const uint8_t*& data)
     , ANCOUNT(get_uint16(data))
     , NSCOUNT(get_uint16(data))
     , ARCOUNT(get_uint16(data))
+{}
+
+void DNSHeader::append(DNSBuffer& buf) const
 {
+    buf.append(ID);
+    flags.append(buf);
+    buf.append(QDCOUNT);
+    buf.append(ANCOUNT);
+    buf.append(NSCOUNT);
+    buf.append(ARCOUNT);
 }
+
+DNSRequest::DNSRequest()
+    : type(0)
+    , cls(0)
+{}
 
 DNSRequest::DNSRequest(const uint8_t* const orig, const uint8_t*& data)
     : name(get_domain(orig, data))
     , type(get_uint16(data))
     , cls(get_uint16(data))
+{}
+
+void DNSRequest::append(DNSBuffer& buf) const
 {
+    buf.append_domain(name);
+    buf.append(type);
+    buf.append(cls);
 }
+
+class DNSAnswerExt
+{
+public:
+    virtual void append(DNSBuffer&) = 0;
+};
+
+class DNSAnswerExtA : public DNSAnswerExt
+{
+public:
+    DNSAnswerExtA(const uint8_t* const orig, const uint8_t*& data)
+    {
+        auto len = get_uint16(data);
+        if (len != sizeof(addr))
+        {
+            throw std::runtime_error("invalid DNS answer of type A");
+        }
+        for (int i = 0; i < len; ++i)
+        {
+            addr[i] = data[i];
+        }
+        data += len;
+    }
+    DNSAnswerExtA(uint8_t a[4])
+    {
+        for (auto i = 0; i < sizeof(a); ++i)
+        {
+            addr[i] = a[i];
+        }
+    }
+    virtual ~DNSAnswerExtA() {}
+    virtual void append(DNSBuffer& buf) override
+    {
+        buf.append(static_cast<uint16_t>(sizeof(addr)));
+        buf.append(addr, sizeof(addr));
+    }
+
+private:
+    uint8_t addr[4];
+};
+
+class DNSAnswerExtTxt : public DNSAnswerExt
+{
+public:
+    DNSAnswerExtTxt(const uint8_t* const orig, const uint8_t*& data)
+    {
+        uint16_t size = get_uint16(data);
+        uint8_t len = get_uint8(data);
+        text = get_string(data, len);
+    }
+    DNSAnswerExtTxt(const std::string& text)
+        : text(text)
+    {}
+    virtual void append(DNSBuffer& buf) override
+    {
+        buf.append(static_cast<uint16_t>(text.size() + sizeof(uint8_t)));
+        buf.append_label(text);
+    }
+
+private:
+    std::string text;
+};
+
+class DNSAnswerExtMx : public DNSAnswerExt
+{
+public:
+    DNSAnswerExtMx(const uint8_t* const orig, const uint8_t*& data)
+        : preference(10)
+    {
+        auto len = get_uint16(data);
+        preference = get_uint16(data);
+        text = get_domain(orig, data);
+    }
+    DNSAnswerExtMx(const std::string& text)
+        : text(text)
+        , preference(10)
+    {}
+    virtual void append(DNSBuffer& buf) override
+    {
+        size_t pos = buf.result.size();
+        buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
+        buf.append(preference);
+        buf.append_domain(text);
+        // little hack: overwrite calculated size
+        size_t size = buf.result.size() - pos;
+        if (size != 0)
+        {
+            *reinterpret_cast<uint16_t*>(&buf.result[pos]) = htons(static_cast<uint16_t>(size));
+        }
+    }
+
+private:
+    uint16_t preference;
+    std::string text;
+};
+
+
+DNSAnswer::DNSAnswer()
+    : type(0)
+    , cls(0)
+    , ttl(0)
+{}
 
 DNSAnswer::DNSAnswer(const uint8_t* const orig, const uint8_t*& data)
     : name(get_domain(orig, data))
@@ -116,11 +266,48 @@ DNSAnswer::DNSAnswer(const uint8_t* const orig, const uint8_t*& data)
     , cls(get_uint16(data))
     , ttl(get_uint32(data))
 {
-    uint16_t len = get_uint16(data);
-    this->data.reserve(len);
-    this->data.insert(this->data.end(), data, data + len);
-    data += len;
+    switch (static_cast<DNSRecordType>(type))
+    {
+    case DNSRecordType::A:
+        ext = std::make_shared<DNSAnswerExtA>(orig, data);
+        break;
+    case DNSRecordType::MX:
+        ext = std::make_shared<DNSAnswerExtMx>(orig, data);
+        break;
+    case DNSRecordType::TXT:
+        ext = std::make_shared<DNSAnswerExtTxt>(orig, data);
+        break;
+    default:
+        break;
+    }
 }
+
+DNSAnswer::~DNSAnswer()
+{}
+
+void DNSAnswer::append(DNSBuffer& buf) const
+{
+    buf.append_domain(name);
+    buf.append(type);
+    buf.append(cls);
+    buf.append(ttl);
+    if (ext)
+    {
+        ext->append(buf);
+    }
+}
+
+DNSAuthorityServer::DNSAuthorityServer()
+    : type(0)
+    , cls(0)
+    , ttl(0)
+    , len(0)
+    , serial(0)
+    , refresh(0)
+    , retry(0)
+    , expire(0)
+    , ttl_min(0)
+{}
 
 DNSAuthorityServer::DNSAuthorityServer(const uint8_t* const orig, const uint8_t*& data)
     : name(get_domain(orig, data))
@@ -136,6 +323,22 @@ DNSAuthorityServer::DNSAuthorityServer(const uint8_t* const orig, const uint8_t*
     , expire(get_uint32(data))
     , ttl_min(get_uint32(data))
 {
+}
+
+void DNSAuthorityServer::append(DNSBuffer& buf) const
+{
+    buf.append_domain(name);
+    buf.append(type);
+    buf.append(cls);
+    buf.append(ttl);
+    buf.append(len);
+    buf.append_domain(primary);
+    buf.append_domain(mbox);
+    buf.append(serial);
+    buf.append(refresh);
+    buf.append(retry);
+    buf.append(expire);
+    buf.append(ttl_min);
 }
 
 DNSPackage::DNSPackage(const uint8_t* data)
@@ -156,6 +359,23 @@ DNSPackage::DNSPackage(const uint8_t* data)
     }
 }
 
+void DNSPackage::append(DNSBuffer& buf) const
+{
+    header.append(buf);
+    for (const auto& elem : requests)
+    {
+        elem.append(buf);
+    }
+    for (const auto& elem : answers)
+    {
+        elem.append(buf);
+    }
+    for (const auto& elem : authorities)
+    {
+        elem.append(buf);
+    }
+}
+
 void DNSPackage::addAnswerTypeA(const std::string& name, const std::string& ip)
 {
     DNSAnswer answer;
@@ -163,18 +383,19 @@ void DNSPackage::addAnswerTypeA(const std::string& name, const std::string& ip)
     answer.type = 1;
     answer.cls = 1;
     answer.ttl = 3600;
-    std::vector<uint8_t> data;
     sockaddr_in sa;
     if (0 == inet_pton(AF_INET, ip.c_str(), &sa.sin_addr))
     {
         throw std::runtime_error("invalid IPv4 address");
     }
-    answer.data = {
+    uint8_t addr[] = {
         sa.sin_addr.S_un.S_un_b.s_b1,
         sa.sin_addr.S_un.S_un_b.s_b2,
         sa.sin_addr.S_un.S_un_b.s_b3,
         sa.sin_addr.S_un.S_un_b.s_b4,
     };
+    answer.ext = std::make_shared<DNSAnswerExtA>(addr);
+
     answers.push_back(answer);
 }
 
@@ -185,8 +406,18 @@ void DNSPackage::addAnswerTypeTxt(const std::string& name, const std::string& te
     answer.type = static_cast<uint16_t>(DNSRecordType::TXT);
     answer.cls = 1;
     answer.ttl = 3600;
-    answer.data.push_back(static_cast<uint8_t>(text.size()));
-    answer.data.insert(answer.data.end(), text.begin(), text.end());
+    answer.ext = std::make_shared<DNSAnswerExtTxt>(text);
+    answers.push_back(answer);
+}
+
+void DNSPackage::addAnswerTypeMx(const std::string& name, const std::string& host)
+{
+    DNSAnswer answer;
+    answer.name = name;
+    answer.type = static_cast<uint16_t>(DNSRecordType::MX);
+    answer.cls = 1;
+    answer.ttl = 3600;
+    answer.ext = std::make_shared<DNSAnswerExtMx>(host);
     answers.push_back(answer);
 }
 
@@ -217,71 +448,6 @@ std::ostream& operator << (std::ostream& stream, const DNSRequest& req)
 DNSBuffer::DNSBuffer()
 {
     result.reserve(512);
-}
-
-void DNSBuffer::append(const DNSPackage& val)
-{
-    append(val.header);
-    for (const auto& elem : val.requests)
-    {
-        append(elem);
-    }
-    for (const auto& elem : val.answers)
-    {
-        append(elem);
-    }
-    for (const auto& elem : val.authorities)
-    {
-        append(elem);
-    }
-}
-
-void DNSBuffer::append(const DNSHeaderFlags& val)
-{
-    append(*reinterpret_cast<const uint16_t*>(&val));
-}
-
-void DNSBuffer::append(const DNSHeader& val)
-{
-    append(val.ID);
-    append(val.flags);
-    append(val.QDCOUNT);
-    append(val.ANCOUNT);
-    append(val.NSCOUNT);
-    append(val.ARCOUNT);
-}
-
-void DNSBuffer::append(const DNSRequest& val)
-{
-    append_domain(val.name);
-    append(val.type);
-    append(val.cls);
-}
-
-void DNSBuffer::append(const DNSAnswer& val)
-{
-    append_domain(val.name);
-    append(val.type);
-    append(val.cls);
-    append(val.ttl);
-    append(static_cast<uint16_t>(val.data.size()));
-    result.insert(result.end(), val.data.begin(), val.data.end());
-}
-
-void DNSBuffer::append(const DNSAuthorityServer& val)
-{
-    append_domain(val.name);
-    append(val.type);
-    append(val.cls);
-    append(val.ttl);
-    append(val.len);
-    append_domain(val.primary);
-    append_domain(val.mbox);
-    append(val.serial);
-    append(val.refresh);
-    append(val.retry);
-    append(val.expire);
-    append(val.ttl_min);
 }
 
 void DNSBuffer::append_domain(const std::string& str)
@@ -321,7 +487,7 @@ void DNSBuffer::append_domain(const std::string& str)
 
 void DNSBuffer::append_label(const std::string& str)
 {
-    result.push_back(static_cast<char>(str.size()));
+    result.push_back(static_cast<uint8_t>(str.size()));
     result.insert(result.end(), str.begin(), str.end());
 }
 
@@ -333,6 +499,16 @@ void DNSBuffer::append(uint16_t val)
 void DNSBuffer::append(uint32_t val)
 {
     ::append_uint32(result, val);
+}
+
+void DNSBuffer::append(const uint8_t val)
+{
+    result.push_back(val);
+}
+
+void DNSBuffer::append(const uint8_t* ptr, size_t size)
+{
+    result.insert(result.end(), ptr, ptr + size);
 }
 
 class DNSServerImpl
@@ -414,6 +590,9 @@ public:
                     case DNSRecordType::A:
                         package.addAnswerTypeA(query.name, iter->second);
                         break;
+                    case DNSRecordType::MX:
+                        package.addAnswerTypeMx(query.name, iter->second);
+                        break;
                     case DNSRecordType::TXT:
                         package.addAnswerTypeTxt(query.name, iter->second);
                         break;
@@ -441,7 +620,7 @@ public:
             package.header.ARCOUNT = 0;
 
             DNSBuffer buf;
-            buf.append(package);
+            package.append(buf);
 
             if (sendto(server_socket, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0, (sockaddr*)&client, sizeof(sockaddr_in)) == SOCKET_ERROR) 
             {

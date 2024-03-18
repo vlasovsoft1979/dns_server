@@ -54,7 +54,7 @@ TEST(Dns, ParseQueryHeaderFlags)
     ASSERT_EQ(2, flags.Z);
     ASSERT_EQ(0, flags.RCODE);
     DNSBuffer buf;
-    buf.append(flags);
+    flags.append(buf);
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 
@@ -69,7 +69,7 @@ TEST(Dns, ParseQuery)
     ASSERT_EQ(0, package.header.NSCOUNT);
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
-    buf.append(package);
+    package.append(buf);
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 
@@ -84,7 +84,7 @@ TEST(Dns, ParseResponse_TypeA_Success)
     ASSERT_EQ(0, package.header.NSCOUNT);
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
-    buf.append(package);
+    package.append(buf);
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 
@@ -99,7 +99,7 @@ TEST(Dns, ParseResponse_TypeA_HostNotFound)
     ASSERT_EQ(1, package.header.NSCOUNT);
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
-    buf.append(package);
+    package.append(buf);
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 

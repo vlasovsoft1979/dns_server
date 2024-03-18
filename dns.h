@@ -8,6 +8,7 @@
 enum class DNSRecordType : uint16_t
 {
     A = 1,
+    MX = 15,
     TXT = 16,
 };
 
@@ -21,11 +22,15 @@ enum class DNSResultCode
     Refused = 5
 };
 
+class DNSBuffer;
+
 struct DNSHeaderFlags
 {
 public:
     DNSHeaderFlags();
     DNSHeaderFlags(const uint8_t*& data);
+
+    void append(DNSBuffer& buf) const;
 
 public:
     uint16_t RCODE : 4;   // response only, query result
@@ -41,8 +46,10 @@ public:
 struct DNSHeader
 {
 public:
-    DNSHeader() = default;
+    DNSHeader();
     DNSHeader(const uint8_t*& data);
+
+    void append(DNSBuffer& buf) const;
 
 public:
     uint16_t ID;          // query id
@@ -56,7 +63,10 @@ public:
 class DNSRequest
 {
 public:
+    DNSRequest();
     DNSRequest(const uint8_t* const orig, const uint8_t*& data);
+
+    void append(DNSBuffer& buf) const;
 
 public:
     std::string name;
@@ -64,24 +74,32 @@ public:
     uint16_t cls;
 };
 
+class DNSAnswerExt;
+
 struct DNSAnswer
 {
 public:
-    DNSAnswer() = default;
+    DNSAnswer();
     DNSAnswer(const uint8_t* const orig, const uint8_t*& data);
+    ~DNSAnswer();
+
+    void append(DNSBuffer& buf) const;
 
 public:
     std::string name;
     uint16_t type;
     uint16_t cls;
     uint32_t ttl;
-    std::vector<uint8_t> data;
+    std::shared_ptr<DNSAnswerExt> ext;
 };
 
 struct DNSAuthorityServer
 {
 public:
+    DNSAuthorityServer();
     DNSAuthorityServer(const uint8_t* const orig, const uint8_t*& data);
+
+    void append(DNSBuffer& buf) const;
 
 public:
     std::string name;
@@ -101,10 +119,14 @@ public:
 class DNSPackage
 {
 public:
+    DNSPackage() {}
     DNSPackage(const uint8_t* data);
+
+    void append(DNSBuffer& buf) const;
 
     void addAnswerTypeA(const std::string& name, const std::string& ip);
     void addAnswerTypeTxt(const std::string& name, const std::string& text);
+    void addAnswerTypeMx(const std::string& name, const std::string& text);
 
 public:
     DNSHeader header;
@@ -118,16 +140,12 @@ class DNSBuffer
 public:
     DNSBuffer();
 
-    void append(const DNSPackage& val);
-    void append(const DNSHeaderFlags& val);
-    void append(const DNSHeader& val);
-    void append(const DNSRequest& val);
-    void append(const DNSAnswer& val);
-    void append(const DNSAuthorityServer& val);
     void append_domain(const std::string& str);
     void append_label(const std::string& str);
     void append(const uint16_t val);
     void append(const uint32_t val);
+    void append(const uint8_t val);
+    void append(const uint8_t* ptr, size_t size);
 
 public:
     std::vector<uint8_t> result;
