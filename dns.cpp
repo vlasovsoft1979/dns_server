@@ -163,7 +163,7 @@ void DNSRequest::append(DNSBuffer& buf) const
 class DNSAnswerExt
 {
 public:
-    virtual void append(DNSBuffer&) = 0;
+    virtual void append(DNSBuffer&) const = 0;
 };
 
 class DNSAnswerExtA : public DNSAnswerExt
@@ -190,7 +190,7 @@ public:
         }
     }
     virtual ~DNSAnswerExtA() {}
-    virtual void append(DNSBuffer& buf) override
+    virtual void append(DNSBuffer& buf) const override
     {
         buf.append(static_cast<uint16_t>(sizeof(addr)));
         buf.append(addr, sizeof(addr));
@@ -212,7 +212,7 @@ public:
     DNSAnswerExtTxt(const std::string& text)
         : text(text)
     {}
-    virtual void append(DNSBuffer& buf) override
+    virtual void append(DNSBuffer& buf) const override
     {
         buf.append(static_cast<uint16_t>(text.size() + sizeof(uint8_t)));
         buf.append_label(text);
@@ -236,7 +236,7 @@ public:
         : text(text)
         , preference(10)
     {}
-    virtual void append(DNSBuffer& buf) override
+    virtual void append(DNSBuffer& buf) const override
     {
         size_t pos = buf.result.size();
         buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
@@ -266,7 +266,7 @@ public:
     DNSAnswerExtCname(const std::string& text)
         : text(text)
     {}
-    virtual void append(DNSBuffer& buf) override
+    virtual void append(DNSBuffer& buf) const override
     {
         size_t pos = buf.result.size();
         buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
@@ -354,8 +354,7 @@ DNSAuthorityServer::DNSAuthorityServer(const uint8_t* const orig, const uint8_t*
     , retry(get_uint32(data))
     , expire(get_uint32(data))
     , ttl_min(get_uint32(data))
-{
-}
+{}
 
 void DNSAuthorityServer::append(DNSBuffer& buf) const
 {
@@ -544,7 +543,7 @@ void DNSBuffer::append(uint32_t val)
     ::append_uint32(result, val);
 }
 
-void DNSBuffer::append(const uint8_t val)
+void DNSBuffer::append(uint8_t val)
 {
     result.push_back(val);
 }
@@ -577,11 +576,13 @@ public:
         , server{0}
         , client{0}
     {
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) 
+        {
             throw std::runtime_error("WSAStartup() failed");
         }
 
-        if ((server_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET) {
+        if ((server_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET) 
+        {
             throw std::runtime_error("Create socket failed");
         }
 
@@ -589,7 +590,8 @@ public:
         server.sin_addr.s_addr = INADDR_ANY;
         server.sin_port = htons(port);
 
-        if (bind(server_socket, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) {
+        if (bind(server_socket, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) 
+        {
             throw std::runtime_error("Bind failed");
         }
     }
@@ -711,7 +713,7 @@ DNSServer::DNSServer(const std::string& jsonFile)
     impl.reset(new DNSServerImpl{ ip, port });
 
     const Json::Value records = root["records"];
-    for (int index = 0; index < records.size(); ++index)
+    for (auto index = 0u; index < records.size(); ++index)
     {
         DNSRecordType type = static_cast<DNSRecordType>(records[index].get("type", 0).asInt());
         std::string host = records[index].get("host", "").asString();

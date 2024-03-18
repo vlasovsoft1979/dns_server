@@ -1,12 +1,6 @@
 #include <iostream>
-#include <winsock2.h>
-
 #include <string>
-#include <vector>
-#include <map>
 
-#include "dns.h"
-#include "params.h"
 #include "dns.h"
 
 int main(int argc, char* argv[]) 
