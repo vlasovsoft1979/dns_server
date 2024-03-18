@@ -94,6 +94,7 @@ TEST(Dns, ParseResponse_TypeA_HostNotFound)
     auto vec = fromHex(pkg);
     DNSPackage package(&vec[0]);
     ASSERT_EQ(0xdb24, package.header.ID);
+    ASSERT_EQ(DNSResultCode::NameError, static_cast<DNSResultCode>(package.header.flags.RCODE));
     ASSERT_EQ(1, package.header.QDCOUNT);
     ASSERT_EQ(0, package.header.ANCOUNT);
     ASSERT_EQ(1, package.header.NSCOUNT);
@@ -118,6 +119,22 @@ TEST(Dns, ParseResponse_TypeMX_Success)
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 
+TEST(Dns, ParseResponse_TypeMX_HostNotFound)
+{
+    std::string pkg{ "b5e7818300010000000100000a6e6f745f657869737473036e657400000f0001c0170006000100000384003d01610c67746c642d73657276657273c017056e73746c640c766572697369676e2d67727303636f6d0065f84efb000007080000038400093a8000015180" };
+    auto vec = fromHex(pkg);
+    DNSPackage package(&vec[0]);
+    ASSERT_EQ(0xb5e7, package.header.ID);
+    ASSERT_EQ(DNSResultCode::NameError, static_cast<DNSResultCode>(package.header.flags.RCODE));
+    ASSERT_EQ(1, package.header.QDCOUNT);
+    ASSERT_EQ(0, package.header.ANCOUNT);
+    ASSERT_EQ(1, package.header.NSCOUNT);
+    ASSERT_EQ(0, package.header.ARCOUNT);
+    DNSBuffer buf;
+    package.append(buf);
+    ASSERT_EQ(pkg, toHex(buf.result));
+}
+
 TEST(Dns, ParseResponse_TypeTXT_Success)
 {
     std::string pkg{ "248c818000010001000000000a766c61736f76736f6674036e65740000100001c00c0010000100000e10000e0d763d737066312061202d616c6c" };
@@ -127,6 +144,22 @@ TEST(Dns, ParseResponse_TypeTXT_Success)
     ASSERT_EQ(1, package.header.QDCOUNT);
     ASSERT_EQ(1, package.header.ANCOUNT);
     ASSERT_EQ(0, package.header.NSCOUNT);
+    ASSERT_EQ(0, package.header.ARCOUNT);
+    DNSBuffer buf;
+    package.append(buf);
+    ASSERT_EQ(pkg, toHex(buf.result));
+}
+
+TEST(Dns, ParseResponse_TypeTXT_HostNotFound)
+{
+    std::string pkg{ "b5e7818300010000000100000a6e6f745f657869737473036e657400000f0001c0170006000100000384003d01610c67746c642d73657276657273c017056e73746c640c766572697369676e2d67727303636f6d0065f84efb000007080000038400093a8000015180" };
+    auto vec = fromHex(pkg);
+    DNSPackage package(&vec[0]);
+    ASSERT_EQ(0xb5e7, package.header.ID);
+    ASSERT_EQ(DNSResultCode::NameError, static_cast<DNSResultCode>(package.header.flags.RCODE));
+    ASSERT_EQ(1, package.header.QDCOUNT);
+    ASSERT_EQ(0, package.header.ANCOUNT);
+    ASSERT_EQ(1, package.header.NSCOUNT);
     ASSERT_EQ(0, package.header.ARCOUNT);
     DNSBuffer buf;
     package.append(buf);
