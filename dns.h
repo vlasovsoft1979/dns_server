@@ -7,7 +7,8 @@
 
 enum class DNSRecordType : uint16_t
 {
-    A = 1
+    A = 1,
+    TXT = 16,
 };
 
 enum class DNSResultCode
@@ -103,6 +104,7 @@ public:
     DNSPackage(const uint8_t* data);
 
     void addAnswerTypeA(const std::string& name, const std::string& ip);
+    void addAnswerTypeTxt(const std::string& name, const std::string& text);
 
 public:
     DNSHeader header;
@@ -124,8 +126,8 @@ public:
     void append(const DNSAuthorityServer& val);
     void append_domain(const std::string& str);
     void append_label(const std::string& str);
-    void append_uint16(const uint16_t val);
-    void append_uint32(const uint32_t val);
+    void append(const uint16_t val);
+    void append(const uint32_t val);
 
 public:
     std::vector<uint8_t> result;

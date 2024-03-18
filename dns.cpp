@@ -20,6 +20,20 @@ uint32_t get_uint32(const uint8_t*& data)
     return val;
 }
 
+void append_uint16(std::vector<uint8_t>& buf, uint16_t val)
+{
+    val = htons(val);
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&val);
+    buf.insert(buf.end(), ptr, ptr + sizeof(val));
+}
+
+void append_uint32(std::vector<uint8_t>& buf, uint32_t val)
+{
+    val = htonl(val);
+    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&val);
+    buf.insert(buf.end(), ptr, ptr + sizeof(val));
+}
+
 std::string get_domain(const uint8_t* const orig, const uint8_t*& data)
 {
     std::string result;
@@ -155,11 +169,24 @@ void DNSPackage::addAnswerTypeA(const std::string& name, const std::string& ip)
     {
         throw std::runtime_error("invalid IPv4 address");
     }
-    answer.data.reserve(4);
-    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b1);
-    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b2);
-    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b3);
-    answer.data.push_back(sa.sin_addr.S_un.S_un_b.s_b4);
+    answer.data = {
+        sa.sin_addr.S_un.S_un_b.s_b1,
+        sa.sin_addr.S_un.S_un_b.s_b2,
+        sa.sin_addr.S_un.S_un_b.s_b3,
+        sa.sin_addr.S_un.S_un_b.s_b4,
+    };
+    answers.push_back(answer);
+}
+
+void DNSPackage::addAnswerTypeTxt(const std::string& name, const std::string& text)
+{
+    DNSAnswer answer;
+    answer.name = name;
+    answer.type = static_cast<uint16_t>(DNSRecordType::TXT);
+    answer.cls = 1;
+    answer.ttl = 3600;
+    answer.data.push_back(static_cast<uint8_t>(text.size()));
+    answer.data.insert(answer.data.end(), text.begin(), text.end());
     answers.push_back(answer);
 }
 
@@ -211,50 +238,50 @@ void DNSBuffer::append(const DNSPackage& val)
 
 void DNSBuffer::append(const DNSHeaderFlags& val)
 {
-    append_uint16(*reinterpret_cast<const uint16_t*>(&val));
+    append(*reinterpret_cast<const uint16_t*>(&val));
 }
 
 void DNSBuffer::append(const DNSHeader& val)
 {
-    append_uint16(val.ID);
+    append(val.ID);
     append(val.flags);
-    append_uint16(val.QDCOUNT);
-    append_uint16(val.ANCOUNT);
-    append_uint16(val.NSCOUNT);
-    append_uint16(val.ARCOUNT);
+    append(val.QDCOUNT);
+    append(val.ANCOUNT);
+    append(val.NSCOUNT);
+    append(val.ARCOUNT);
 }
 
 void DNSBuffer::append(const DNSRequest& val)
 {
     append_domain(val.name);
-    append_uint16(val.type);
-    append_uint16(val.cls);
+    append(val.type);
+    append(val.cls);
 }
 
 void DNSBuffer::append(const DNSAnswer& val)
 {
     append_domain(val.name);
-    append_uint16(val.type);
-    append_uint16(val.cls);
-    append_uint32(val.ttl);
-    append_uint16(static_cast<uint16_t>(val.data.size()));
+    append(val.type);
+    append(val.cls);
+    append(val.ttl);
+    append(static_cast<uint16_t>(val.data.size()));
     result.insert(result.end(), val.data.begin(), val.data.end());
 }
 
 void DNSBuffer::append(const DNSAuthorityServer& val)
 {
     append_domain(val.name);
-    append_uint16(val.type);
-    append_uint16(val.cls);
-    append_uint32(val.ttl);
-    append_uint16(val.len);
+    append(val.type);
+    append(val.cls);
+    append(val.ttl);
+    append(val.len);
     append_domain(val.primary);
     append_domain(val.mbox);
-    append_uint32(val.serial);
-    append_uint32(val.refresh);
-    append_uint32(val.retry);
-    append_uint32(val.expire);
-    append_uint32(val.ttl_min);
+    append(val.serial);
+    append(val.refresh);
+    append(val.retry);
+    append(val.expire);
+    append(val.ttl_min);
 }
 
 void DNSBuffer::append_domain(const std::string& str)
@@ -269,7 +296,7 @@ void DNSBuffer::append_domain(const std::string& str)
     {
         uint16_t val = static_cast<uint16_t>(iter->second);
         val |= 0xc000;
-        append_uint16(val);
+        append(val);
     }
     else
     {
@@ -298,18 +325,14 @@ void DNSBuffer::append_label(const std::string& str)
     result.insert(result.end(), str.begin(), str.end());
 }
 
-void DNSBuffer::append_uint16(uint16_t val)
+void DNSBuffer::append(uint16_t val)
 {
-    val = htons(val);
-    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&val);
-    result.insert(result.end(), ptr, ptr + sizeof(val));
+    ::append_uint16(result, val);
 }
 
-void DNSBuffer::append_uint32(uint32_t val)
+void DNSBuffer::append(uint32_t val)
 {
-    val = htonl(val);
-    const uint8_t* ptr = reinterpret_cast<const uint8_t*>(&val);
-    result.insert(result.end(), ptr, ptr + sizeof(val));
+    ::append_uint32(result, val);
 }
 
 class DNSServerImpl
@@ -390,6 +413,9 @@ public:
                     {
                     case DNSRecordType::A:
                         package.addAnswerTypeA(query.name, iter->second);
+                        break;
+                    case DNSRecordType::TXT:
+                        package.addAnswerTypeTxt(query.name, iter->second);
                         break;
                     default:
                         package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NotImplemented);
