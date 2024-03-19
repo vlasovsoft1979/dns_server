@@ -7,6 +7,7 @@
 
 enum class DNSRecordType : uint16_t
 {
+    OTHER = 0,
     A = 1,
     CNAME = 5,
     MX = 15,
@@ -24,6 +25,8 @@ enum class DNSResultCode
 };
 
 class DNSBuffer;
+
+DNSRecordType StrToRecType(const std::string& str);
 
 struct DNSHeaderFlags
 {

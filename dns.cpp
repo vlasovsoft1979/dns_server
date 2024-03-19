@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <ostream>
 #include <fstream>
+#include <unordered_map>
+#include <algorithm>
 #include <json/json.h>
 
 #include "dns.h"
@@ -91,6 +93,20 @@ std::string get_domain(const uint8_t* const orig, const uint8_t*& data)
     return result;
 }
 
+}
+
+DNSRecordType StrToRecType(const std::string& str)
+{
+    static const std::unordered_map<std::string, DNSRecordType> map = {
+        {"A", DNSRecordType::A},
+        {"CNAME", DNSRecordType::CNAME},
+        {"MX", DNSRecordType::MX},
+        {"TXT", DNSRecordType::TXT},
+    };
+    std::string strUpper{ str };
+    std::transform(str.begin(), str.end(), strUpper.begin(), std::toupper);
+    const auto iter = map.find(strUpper);
+    return iter != map.end() ? iter->second : DNSRecordType::OTHER;
 }
 
 DNSHeaderFlags::DNSHeaderFlags()
@@ -715,7 +731,11 @@ DNSServer::DNSServer(const std::string& jsonFile)
     const Json::Value records = root["records"];
     for (auto index = 0u; index < records.size(); ++index)
     {
-        DNSRecordType type = static_cast<DNSRecordType>(records[index].get("type", 0).asInt());
+        DNSRecordType type = ::StrToRecType(records[index].get("type", "").asString());
+        if (DNSRecordType::OTHER == type)
+        {
+            throw std::runtime_error("Error parsing json file: wrong DNS record type");
+        }
         std::string host = records[index].get("host", "").asString();
         std::string answer = records[index].get("response", "").asString();
         addRecord(type, host, answer);

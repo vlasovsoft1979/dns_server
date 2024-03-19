@@ -3,17 +3,17 @@
   "port": 10000,
   "records": [
     {
-      "type": 1,
+      "type": "A",
       "host": "domain.com",
       "response": "1.1.1.1",
     },
     {
-      "type": 15,
+      "type": "MX",
       "host": "domain.com",
       "response": "mx.domain.com",
     },
     {
-      "type": 16,
+      "type": "TXT",
       "host": "domain.com",
       "response": "some text example",
     }
