@@ -501,7 +501,8 @@ std::ostream& operator << (std::ostream& stream, const DNSRequest& req)
 }
 
 DNSBuffer::DNSBuffer()
-    : data_start(0)
+    : data_start(0u)
+    , max_size(0u)
 {
     result.reserve(512);
 }
@@ -570,6 +571,14 @@ void DNSBuffer::append(const uint8_t* ptr, size_t size)
 void DNSBuffer::overwrite_uint16(size_t pos, uint16_t val)
 {
     *reinterpret_cast<uint16_t*>(&result[pos]) = htons(val);
+}
+
+void DNSBuffer::clear()
+{
+    data_start = 0u;
+    max_size = 0u;
+    result.clear();
+    compress.clear();
 }
 
 class DNSServerImpl
@@ -701,9 +710,9 @@ class DNSServerImpl
 
     void readUdpSocket(SOCKET s)
     {
-        char message[BUFLEN] = {};
+        char message[UDP_SIZE] = {};
         int slen = sizeof(udp_socket_data.client);
-        int msg_len = recvfrom(s, message, BUFLEN, 0, (sockaddr*)&udp_socket_data.client, &slen);
+        int msg_len = recvfrom(s, message, UDP_SIZE, 0, (sockaddr*)&udp_socket_data.client, &slen);
         if (msg_len <= 0)
         {
             // recvfrom error: just ignore
@@ -720,6 +729,7 @@ class DNSServerImpl
     void writeUdpSocket(SOCKET s)
     {
         DNSBuffer buf;
+        buf.max_size = UDP_SIZE;
         process(&udp_socket_data.request[0], buf);
 
         int slen = sizeof(udp_socket_data.client);
@@ -794,6 +804,17 @@ class DNSServerImpl
         package.header.ARCOUNT = 0;
 
         package.append(buf);
+
+        if (buf.max_size > 0 && buf.result.size() > buf.max_size)
+        {
+            package.header.ANCOUNT = 0;
+            package.answers.clear();
+            package.header.NSCOUNT = 0;
+            package.authorities.clear();
+            package.header.flags.TC = 1; // truncated
+            buf.clear();
+            package.append(buf);
+        }
     }
 
     static void pollfds_add(fd_set* set, SOCKET fd)
@@ -925,10 +946,10 @@ private:
     fd_set readfds;
     fd_set writefds;
 
-    static const int BUFLEN = 512;
+    static const int UDP_SIZE = 512;
 };
 
-const int DNSServerImpl::BUFLEN;
+const int DNSServerImpl::UDP_SIZE;
 
 DNSServer::DNSServer(const std::string& host, int port)
     : impl(new DNSServerImpl{host, port})

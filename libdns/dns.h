@@ -145,6 +145,8 @@ class DNSBuffer
 public:
     DNSBuffer();
 
+    void clear();
+
     void append_domain(const std::string& str);
     void append_label(const std::string& str);
     void append(const uint16_t val);
@@ -155,6 +157,7 @@ public:
     void overwrite_uint16(size_t pos, uint16_t val);
 public:
     size_t data_start;
+    size_t max_size;
     std::vector<uint8_t> result;
 
 private:
