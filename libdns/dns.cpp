@@ -747,16 +747,28 @@ class DNSServerImpl
                 switch (type)
                 {
                 case DNSRecordType::A:
-                    package.addAnswerTypeA(query.name, iter->second);
+                    for (const auto& item : iter->second)
+                    {
+                        package.addAnswerTypeA(query.name, item);
+                    }
                     break;
                 case DNSRecordType::MX:
-                    package.addAnswerTypeMx(query.name, iter->second);
+                    for (const auto& item : iter->second)
+                    {
+                        package.addAnswerTypeMx(query.name, item);
+                    }
                     break;
                 case DNSRecordType::TXT:
-                    package.addAnswerTypeTxt(query.name, iter->second);
+                    for (const auto& item : iter->second)
+                    {
+                        package.addAnswerTypeTxt(query.name, item);
+                    }
                     break;
                 case DNSRecordType::CNAME:
-                    package.addAnswerTypeCname(query.name, iter->second);
+                    for (const auto& item : iter->second)
+                    {
+                        package.addAnswerTypeCname(query.name, item);
+                    }
                     break;
                 default:
                     package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NotImplemented);
@@ -806,7 +818,7 @@ public:
         }
     }
 
-    void addRecord(DNSRecordType type, const std::string& host, const std::string& answer)
+    void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
     {
         table[Request(type, host)] = answer;
     }
@@ -907,7 +919,7 @@ private:
     std::string host;
     int port;
     SOCKET socket_udp, socket_tcp;
-    std::map<Request, std::string> table;
+    std::map<Request, std::vector<std::string> > table;
     std::map<SOCKET, TcpSocketContext> tcp_socket_data;
     UdpSocketContext udp_socket_data;
     fd_set readfds;
@@ -950,15 +962,20 @@ DNSServer::DNSServer(const std::string& jsonFile)
             throw std::runtime_error("Error parsing json file: wrong DNS record type");
         }
         std::string host = records[index].get("host", "").asString();
-        std::string answer = records[index].get("response", "").asString();
-        addRecord(type, host, answer);
+        const Json::Value response = records[index]["response"];
+        std::vector<std::string> answers;
+        for (auto i = 0u; i < response.size(); ++i)
+        {
+            answers.push_back(response[i].asString());
+        }
+        addRecord(type, host, answers);
     }
 }
 
 DNSServer::~DNSServer()
 {}
 
-void DNSServer::addRecord(DNSRecordType type, const std::string& host, const std::string& answer)
+void DNSServer::addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
 {
     impl->addRecord(type, host, answer);
 }
