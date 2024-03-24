@@ -2,6 +2,7 @@
 #include <ws2tcpip.h>
 #include <stdint.h>
 #include <ostream>
+#include <iostream>
 #include <fstream>
 #include <unordered_map>
 #include <algorithm>
@@ -259,11 +260,7 @@ public:
         buf.append(preference);
         buf.append_domain(text);
         // little hack: overwrite calculated size
-        size_t size = buf.result.size() - pos - 2;
-        if (size != 0)
-        {
-            *reinterpret_cast<uint16_t*>(&buf.result[pos]) = htons(static_cast<uint16_t>(size));
-        }
+        buf.overwrite_uint16(pos, static_cast<uint16_t>(buf.result.size() - pos - sizeof(uint16_t)));
     }
 
 private:
@@ -504,6 +501,7 @@ std::ostream& operator << (std::ostream& stream, const DNSRequest& req)
 }
 
 DNSBuffer::DNSBuffer()
+    : data_start(0)
 {
     result.reserve(512);
 }
@@ -524,20 +522,20 @@ void DNSBuffer::append_domain(const std::string& str)
     }
     else
     {
-        auto prev_size = result.size();
+        auto offset = result.size() - data_start;
         auto pos = str.find('.');
         if (pos != std::string::npos)
         {
             auto before = str.substr(0, pos);
             append_label(before);
-            compress.emplace(str, prev_size);
+            compress.emplace(str, offset);
             auto after = str.substr(pos + 1);
             append_domain(after);
         }
         else
         {
             append_label(str);
-            compress.emplace(str, prev_size);
+            compress.emplace(str, offset);
             result.push_back('\0');
         }
     }
@@ -569,6 +567,11 @@ void DNSBuffer::append(const uint8_t* ptr, size_t size)
     result.insert(result.end(), ptr, ptr + size);
 }
 
+void DNSBuffer::overwrite_uint16(size_t pos, uint16_t val)
+{
+    *reinterpret_cast<uint16_t*>(&result[pos]) = htons(val);
+}
+
 class DNSServerImpl
 {
     struct Request
@@ -585,30 +588,221 @@ class DNSServerImpl
         }
     };
 
+    struct TcpSocketContext
+    {
+        std::vector<uint8_t> request;
+        std::vector<uint8_t> response;
+        int bytes_sent;
+        TcpSocketContext()
+            : bytes_sent(0)
+        {}
+    };
+
+    struct UdpSocketContext
+    {
+        std::vector<uint8_t> request;
+        sockaddr_in client;
+        UdpSocketContext()
+            : client{ 0 }
+        {}
+    };
+
+    void closeTcpSocket(SOCKET s)
+    {
+        pollfds_del(&readfds, s);
+        pollfds_del(&writefds, s);
+        closesocket(s);
+        tcp_socket_data.erase(s);
+    }
+
+    void readTcpSocket(SOCKET s)
+    {
+        TcpSocketContext& ctx = tcp_socket_data[s];
+        if (ctx.request.size() < sizeof(uint16_t))
+        {
+            // receive data length
+            int bytes_to_read = static_cast<int>(sizeof(uint16_t) - ctx.request.size());
+            std::vector<uint8_t> buf(bytes_to_read, 0);
+            int msg_len = recv(s, reinterpret_cast<char*>(&buf[0]), bytes_to_read, 0);
+            if (msg_len <= 0)
+            {
+                // error or close connection
+                closeTcpSocket(s);
+                return;
+            }
+            ctx.request.insert(ctx.request.end(), buf.begin(), buf.end());
+            return; // need more data
+        }
+
+        const uint8_t* dataPtr = &ctx.request[0];
+        uint16_t expected_size = get_uint16(dataPtr);
+        if (ctx.request.size() < expected_size + sizeof(uint16_t))
+        {
+            int bytes_to_read = static_cast<int>(sizeof(uint16_t) + expected_size - ctx.request.size());
+            std::vector<uint8_t> buf(bytes_to_read, 0);
+            int msg_len = recv(s, reinterpret_cast<char*>(&buf[0]), bytes_to_read, 0);
+            if (msg_len <= 0)
+            {
+                // error or close connection
+                closeTcpSocket(s);
+                return;
+            }
+            ctx.request.insert(ctx.request.end(), buf.begin(), buf.end());
+        }
+
+        if (ctx.request.size() < expected_size + sizeof(uint16_t))
+        {
+            return; // need more data
+        }
+
+        // now be ready to write response
+        pollfds_del(&readfds, s);
+        pollfds_add(&writefds, s);
+    }
+
+    void writeTcpSocket(SOCKET s)
+    {
+        TcpSocketContext& ctx = tcp_socket_data[s];
+        if (ctx.response.empty())
+        {
+            DNSBuffer buf;
+            buf.append(static_cast<uint16_t>(0u));  // SIZE (will be calculated later)
+            buf.data_start = buf.result.size();
+            process(&ctx.request[sizeof(uint16_t)], buf);
+            buf.overwrite_uint16(0, static_cast<uint16_t>(buf.result.size() - sizeof(uint16_t)));
+            ctx.response = std::move(buf.result);
+        }
+        if (ctx.bytes_sent < ctx.response.size())
+        {
+            int bytes_to_write = static_cast<int>(ctx.response.size() - ctx.bytes_sent);
+            int bytes_written = send(s, reinterpret_cast<const char*>(&ctx.response[ctx.bytes_sent]), bytes_to_write, 0);
+            if (bytes_written <= 0)
+            {
+                // error or close connection
+                closeTcpSocket(s);
+                return;
+            }
+            ctx.bytes_sent += bytes_written;
+            if (ctx.bytes_sent >= ctx.response.size())
+            {
+                // all data is sent, close connection
+                closeTcpSocket(s);
+                return;
+            }
+        }
+        if (ctx.bytes_sent < ctx.response.size())
+        {
+            return; // need send more data
+        }
+
+        // All data is sent. Close connection
+        closeTcpSocket(s);
+    }
+
+    void readUdpSocket(SOCKET s)
+    {
+        char message[BUFLEN] = {};
+        int slen = sizeof(udp_socket_data.client);
+        int msg_len = recvfrom(s, message, BUFLEN, 0, (sockaddr*)&udp_socket_data.client, &slen);
+        if (msg_len <= 0)
+        {
+            // recvfrom error: just ignore
+            return;
+        }
+        const uint8_t* ptr = reinterpret_cast<const uint8_t*>(message);
+        udp_socket_data.request.assign(ptr, ptr + msg_len);
+
+        // now be ready to write response
+        pollfds_del(&readfds, s);
+        pollfds_add(&writefds, s);
+    }
+
+    void writeUdpSocket(SOCKET s)
+    {
+        DNSBuffer buf;
+        process(&udp_socket_data.request[0], buf);
+
+        int slen = sizeof(udp_socket_data.client);
+        int bytes_to_write = static_cast<int>(buf.result.size());
+        sendto(s, reinterpret_cast<const char*>(&buf.result[0]), bytes_to_write, 0, (sockaddr*)&udp_socket_data.client, slen);
+
+        pollfds_del(&writefds, s);
+        pollfds_add(&readfds, s);
+    }
+
+    void process(const uint8_t* query, DNSBuffer& buf)
+    {
+        DNSPackage package(query);
+
+        package.header.flags.QR = 1; // answer
+        package.header.flags.RA = 1; // supports recursion
+        package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NoError);
+        for (const auto& query : package.requests)
+        {
+            DNSRecordType type = static_cast<DNSRecordType>(query.type);
+            Request req{ type, query.name };
+            const auto iter = table.find(req);
+            if (iter != table.end())
+            {
+                switch (type)
+                {
+                case DNSRecordType::A:
+                    package.addAnswerTypeA(query.name, iter->second);
+                    break;
+                case DNSRecordType::MX:
+                    package.addAnswerTypeMx(query.name, iter->second);
+                    break;
+                case DNSRecordType::TXT:
+                    package.addAnswerTypeTxt(query.name, iter->second);
+                    break;
+                case DNSRecordType::CNAME:
+                    package.addAnswerTypeCname(query.name, iter->second);
+                    break;
+                default:
+                    package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NotImplemented);
+                    break;
+                }
+            }
+            else
+            {
+                package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NameError);
+            }
+            if (package.header.flags.RCODE != static_cast<uint16_t>(DNSResultCode::NoError))
+            {
+                break;
+            }
+        }
+
+        if (package.header.flags.RCODE != static_cast<uint16_t>(DNSResultCode::NoError))
+        {
+            package.answers.clear();
+        }
+
+        package.header.ANCOUNT = static_cast<uint16_t>(package.answers.size());
+        package.header.ARCOUNT = 0;
+
+        package.append(buf);
+    }
+
+    static void pollfds_add(fd_set* set, SOCKET fd)
+    {
+        FD_SET(fd, set);
+    }
+
+    static void pollfds_del(fd_set* set, SOCKET fd)
+    {
+        FD_CLR(fd, set);
+    }
+
 public:
     DNSServerImpl(const std::string& host, int port)
         : wsa{0}
-        , server_socket{0}
-        , server{0}
-        , client{0}
+        , host(host)
+        , port(port)
     {
         if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) 
         {
             throw std::runtime_error("WSAStartup() failed");
-        }
-
-        if ((server_socket = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET) 
-        {
-            throw std::runtime_error("Create socket failed");
-        }
-
-        server.sin_family = AF_INET;
-        server.sin_addr.s_addr = INADDR_ANY;
-        server.sin_port = htons(port);
-
-        if (bind(server_socket, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR) 
-        {
-            throw std::runtime_error("Bind failed");
         }
     }
 
@@ -619,86 +813,105 @@ public:
 
     void process()
     {
+        u_long mode = 1;  // 1 to enable non-blocking socket
+
+        fd_set readfds_work;
+        fd_set writefds_work;
+
+        FD_ZERO(&readfds);
+        FD_ZERO(&writefds);
+
+        sockaddr_in server = { 0 };
+        server.sin_family = AF_INET;
+        server.sin_addr.s_addr = INADDR_ANY;
+        server.sin_port = htons(port);
+
+        // UDP socket
+        SOCKET socket_udp = 0;
+        if ((socket_udp = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
+        {
+            throw std::runtime_error("Create UDP socket failed");
+        }
+
+        ioctlsocket(socket_udp, FIONBIO, &mode);
+        if (bind(socket_udp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
+        {
+            throw std::runtime_error("Bind UDP socket failed");
+        }
+        pollfds_add(&readfds, socket_udp);
+
+        // TCP socket
+        SOCKET socket_tcp = 0;
+        if ((socket_tcp = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
+        {
+            throw std::runtime_error("Create TCP socket failed");
+        }
+        ioctlsocket(socket_tcp, FIONBIO, &mode);
+        if (bind(socket_tcp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
+        {
+            throw std::runtime_error("Bind UDP socket failed");
+        }
+        listen(socket_tcp, 5);
+        pollfds_add(&readfds, socket_tcp);
+
         while (true)
         {
-            char message[BUFLEN] = {};
+            readfds_work = readfds;
+            writefds_work = writefds;
 
-            int message_len = 0;
-            int slen = sizeof(sockaddr_in);
-            if ((message_len = recvfrom(server_socket, message, BUFLEN, 0, (sockaddr*)&client, &slen)) == SOCKET_ERROR) 
+            int res = select(0, &readfds_work, &writefds_work, NULL, NULL);
+            if (res == -1)
             {
-                throw std::runtime_error("recvfrom() failed");
+                int code = WSAGetLastError();
+                continue;
             }
 
-            if (message_len < sizeof(DNSHeader))
+            for (auto i = 0u; i < readfds_work.fd_count; i++)
             {
-                throw std::runtime_error("DNS packet too small");
-            }
-
-            DNSPackage package(reinterpret_cast<uint8_t*>(message));
-
-            package.header.flags.QR = 1; // answer
-            package.header.flags.RA = 1; // supports recursion
-            package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NoError);
-            for (const auto& query : package.requests)
-            {
-                DNSRecordType type = static_cast<DNSRecordType>(query.type);
-                Request req{ type, query.name };
-                const auto iter = table.find(req);
-                if (iter != table.end())
+                SOCKET fd = readfds_work.fd_array[i];
+                if (fd == socket_tcp)
                 {
-                    switch (type)
-                    {
-                    case DNSRecordType::A:
-                        package.addAnswerTypeA(query.name, iter->second);
-                        break;
-                    case DNSRecordType::MX:
-                        package.addAnswerTypeMx(query.name, iter->second);
-                        break;
-                    case DNSRecordType::TXT:
-                        package.addAnswerTypeTxt(query.name, iter->second);
-                        break;
-                    case DNSRecordType::CNAME:
-                        package.addAnswerTypeCname(query.name, iter->second);
-                        break;
-                    default:
-                        package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NotImplemented);
-                        break;
-                    }
+                    struct sockaddr_storage client_addr;
+                    socklen_t client_addr_len = sizeof(client_addr);
+                    SOCKET client = accept(fd, (struct sockaddr*)&client_addr, &client_addr_len);
+                    pollfds_add(&readfds, client);
+                    u_long mode = 1;  // 1 to enable non-blocking socket
+                    ioctlsocket(client, FIONBIO, &mode);
+                }
+                else if (fd == socket_udp)
+                {
+                    readUdpSocket(fd);
                 }
                 else
                 {
-                    package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NameError);
+                    readTcpSocket(fd);
                 }
-                if (package.header.flags.RCODE != static_cast<uint16_t>(DNSResultCode::NoError))
+            }
+            for (auto i = 0u; i < writefds_work.fd_count; i++)
+            {
+                SOCKET fd = writefds_work.fd_array[i];
+                if (fd == socket_udp) // client socket
                 {
-                    break;
+                    writeUdpSocket(fd);
                 }
-            }
-
-            if (package.header.flags.RCODE != static_cast<uint16_t>(DNSResultCode::NoError))
-            {
-                package.answers.clear();
-            }
-
-            package.header.ANCOUNT = static_cast<uint16_t>(package.answers.size());
-            package.header.ARCOUNT = 0;
-
-            DNSBuffer buf;
-            package.append(buf);
-
-            if (sendto(server_socket, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0, (sockaddr*)&client, sizeof(sockaddr_in)) == SOCKET_ERROR) 
-            {
-                throw std::runtime_error("recvfrom() failed");
+                else if (fd != socket_tcp)
+                {
+                    writeTcpSocket(fd);
+                }
             }
         }
     }
 
 private:
     WSADATA wsa;
-    SOCKET server_socket;
-    sockaddr_in server, client;
+    std::string host;
+    int port;
+    SOCKET socket_udp, socket_tcp;
     std::map<Request, std::string> table;
+    std::map<SOCKET, TcpSocketContext> tcp_socket_data;
+    UdpSocketContext udp_socket_data;
+    fd_set readfds;
+    fd_set writefds;
 
     static const int BUFLEN = 512;
 };

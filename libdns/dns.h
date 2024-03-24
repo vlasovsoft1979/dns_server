@@ -152,7 +152,9 @@ public:
     void append(const uint8_t val);
     void append(const uint8_t* ptr, size_t size);
 
+    void overwrite_uint16(size_t pos, uint16_t val);
 public:
+    size_t data_start;
     std::vector<uint8_t> result;
 
 private:
