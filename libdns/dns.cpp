@@ -660,7 +660,13 @@ class DNSServerImpl
         pollfds_del(&readfds, s);
         pollfds_del(&writefds, s);
         closesocket(s);
-        tcp_socket_data.erase(s);
+    }
+
+    void closeUdpSocket(SOCKET s)
+    {
+        pollfds_del(&readfds, s);
+        pollfds_del(&writefds, s);
+        closesocket(s);
     }
 
     void readTcpSocket(SOCKET s)
@@ -676,6 +682,7 @@ class DNSServerImpl
             {
                 // error or close connection
                 closeTcpSocket(s);
+                tcp_socket_data.erase(s);
                 return;
             }
             ctx.request.insert(ctx.request.end(), buf.begin(), buf.end());
@@ -693,6 +700,7 @@ class DNSServerImpl
             {
                 // error or close connection
                 closeTcpSocket(s);
+                tcp_socket_data.erase(s);
                 return;
             }
             ctx.request.insert(ctx.request.end(), buf.begin(), buf.end());
@@ -728,6 +736,7 @@ class DNSServerImpl
             {
                 // error or close connection
                 closeTcpSocket(s);
+                tcp_socket_data.erase(s);
                 return;
             }
             ctx.bytes_sent += bytes_written;
@@ -735,6 +744,7 @@ class DNSServerImpl
             {
                 // all data is sent, close connection
                 closeTcpSocket(s);
+                tcp_socket_data.erase(s);
                 return;
             }
         }
@@ -745,6 +755,7 @@ class DNSServerImpl
 
         // All data is sent. Close connection
         closeTcpSocket(s);
+        tcp_socket_data.erase(s);
     }
 
     void readUdpSocket(SOCKET s)
@@ -757,6 +768,7 @@ class DNSServerImpl
             // recvfrom error: just ignore
             return;
         }
+
         const uint8_t* ptr = reinterpret_cast<const uint8_t*>(message);
         udp_socket_data.request.assign(ptr, ptr + msg_len);
 
@@ -767,13 +779,32 @@ class DNSServerImpl
 
     void writeUdpSocket(SOCKET s)
     {
-        DNSBuffer buf;
-        buf.max_size = UDP_SIZE;
-        process(&udp_socket_data.request[0], buf);
-
         int slen = sizeof(udp_socket_data.client);
-        int bytes_to_write = static_cast<int>(buf.result.size());
-        sendto(s, reinterpret_cast<const char*>(&buf.result[0]), bytes_to_write, 0, (sockaddr*)&udp_socket_data.client, slen);
+        if (udp_socket_data.request.size() < sizeof(DNSHeader))
+        {
+            std::string cmd(udp_socket_data.request.begin(), udp_socket_data.request.end());
+            if (cmd == "quit\n" || cmd == "exit\n")
+            {
+                canExit = true;
+                cmd = "Terminating...\n";
+            }
+            else
+            {
+                cmd = "Unknown command!\n";
+            }
+            sendto(s, cmd.c_str(), static_cast<int>(cmd.size()), 0, (sockaddr*)&udp_socket_data.client, slen);
+        }
+        else
+        {
+            DNSBuffer buf;
+            buf.max_size = UDP_SIZE;
+            process(&udp_socket_data.request[0], buf);
+
+            int bytes_to_write = static_cast<int>(buf.result.size());
+            sendto(s, reinterpret_cast<const char*>(&buf.result[0]), bytes_to_write, 0, (sockaddr*)&udp_socket_data.client, slen);
+        }
+
+        udp_socket_data.request.clear();
 
         pollfds_del(&writefds, s);
         pollfds_add(&readfds, s);
@@ -932,7 +963,8 @@ public:
         listen(socket_tcp, 5);
         pollfds_add(&readfds, socket_tcp);
 
-        while (true)
+        canExit = false;
+        while (!canExit)
         {
             readfds_work = readfds;
             writefds_work = writefds;
@@ -978,6 +1010,14 @@ public:
                 }
             }
         }
+
+        closeUdpSocket(socket_udp);
+        closeTcpSocket(socket_tcp);
+        for (auto it = tcp_socket_data.begin(); it != tcp_socket_data.end();)
+        {
+            closeTcpSocket(it->first);
+            it = tcp_socket_data.erase(it);
+        }
     }
 
 private:
@@ -990,6 +1030,7 @@ private:
     UdpSocketContext udp_socket_data;
     fd_set readfds;
     fd_set writefds;
+    bool canExit;
 
     static const int UDP_SIZE = 512;
 };
