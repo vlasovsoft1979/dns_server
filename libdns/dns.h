@@ -10,6 +10,7 @@ enum class DNSRecordType : uint16_t
     OTHER = 0,
     A = 1,
     CNAME = 5,
+    PTR = 12,
     MX = 15,
     TXT = 16,
 };
@@ -132,6 +133,7 @@ public:
     void addAnswerTypeTxt(const std::string& name, const std::string& text);
     void addAnswerTypeMx(const std::string& name, const std::string& text);
     void addAnswerTypeCname(const std::string& name, const std::string& text);
+    void addAnswerTypePtr(const std::string& name, const std::string& text);
 
 public:
     DNSHeader header;

@@ -16,6 +16,11 @@
       "type": "TXT",
       "host": "domain.com",
       "response": ["some text example", "another text example"],
+    },
+    {
+      "type": "PTR",
+      "host": "139.238.125.74.in-addr.arpa",
+      "response": ["test1.com", "test2.com"],
     }
   ]
 }

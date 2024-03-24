@@ -101,6 +101,7 @@ DNSRecordType StrToRecType(const std::string& str)
     static const std::unordered_map<std::string, DNSRecordType> map = {
         {"A", DNSRecordType::A},
         {"CNAME", DNSRecordType::CNAME},
+        {"PTR", DNSRecordType::PTR},
         {"MX", DNSRecordType::MX},
         {"TXT", DNSRecordType::TXT},
     };
@@ -296,6 +297,30 @@ private:
     std::string text;
 };
 
+class DNSAnswerExtPtr : public DNSAnswerExt
+{
+public:
+    DNSAnswerExtPtr(const uint8_t* const orig, const uint8_t*& data)
+    {
+        auto len = get_uint16(data);
+        host = get_domain(orig, data);
+    }
+    DNSAnswerExtPtr(const std::string& host)
+        : host(host)
+    {}
+    virtual void append(DNSBuffer& buf) const override
+    {
+        size_t pos = buf.result.size();
+        buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
+        buf.append_domain(host);
+        // little hack: overwrite calculated size
+        buf.overwrite_uint16(pos, static_cast<uint16_t>(buf.result.size() - pos - sizeof(uint16_t)));
+    }
+
+private:
+    std::string host;
+};
+
 DNSAnswer::DNSAnswer()
     : type(0)
     , cls(0)
@@ -321,6 +346,9 @@ DNSAnswer::DNSAnswer(const uint8_t* const orig, const uint8_t*& data)
         break;
     case DNSRecordType::CNAME:
         ext = std::make_shared<DNSAnswerExtCname>(orig, data);
+        break;
+    case DNSRecordType::PTR:
+        ext = std::make_shared<DNSAnswerExtPtr>(orig, data);
         break;
     default:
         break;
@@ -473,6 +501,17 @@ void DNSPackage::addAnswerTypeCname(const std::string& name, const std::string& 
     answer.cls = 1;
     answer.ttl = 3600;
     answer.ext = std::make_shared<DNSAnswerExtCname>(host);
+    answers.push_back(answer);
+}
+
+void DNSPackage::addAnswerTypePtr(const std::string& name, const std::string& host)
+{
+    DNSAnswer answer;
+    answer.name = name;
+    answer.type = static_cast<uint16_t>(DNSRecordType::PTR);
+    answer.cls = 1;
+    answer.ttl = 3600;
+    answer.ext = std::make_shared<DNSAnswerExtPtr>(host);
     answers.push_back(answer);
 }
 
@@ -778,6 +817,12 @@ class DNSServerImpl
                     for (const auto& item : iter->second)
                     {
                         package.addAnswerTypeCname(query.name, item);
+                    }
+                    break;
+                case DNSRecordType::PTR:
+                    for (const auto& item : iter->second)
+                    {
+                        package.addAnswerTypePtr(query.name, item);
                     }
                     break;
                 default:
