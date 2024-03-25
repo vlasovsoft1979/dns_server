@@ -6,6 +6,7 @@
 #include <fstream>
 #include <unordered_map>
 #include <algorithm>
+#include <thread>
 #include <json/json.h>
 
 #include "dns.h"
@@ -266,23 +267,6 @@ class DNSServerImpl
         FD_CLR(fd, set);
     }
 
-public:
-    DNSServerImpl(const std::string& host, int port)
-        : wsa{0}
-        , host(host)
-        , port(port)
-    {
-        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) 
-        {
-            throw std::runtime_error("WSAStartup() failed");
-        }
-    }
-
-    void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
-    {
-        table[Request(type, host)] = answer;
-    }
-
     void process()
     {
         u_long mode = 1;  // 1 to enable non-blocking socket
@@ -383,6 +367,33 @@ public:
         }
     }
 
+public:
+    DNSServerImpl(const std::string& host, int port)
+        : wsa{0}
+        , host(host)
+        , port(port)
+    {
+        if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) 
+        {
+            throw std::runtime_error("WSAStartup() failed");
+        }
+    }
+
+    void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
+    {
+        table[Request(type, host)] = answer;
+    }
+
+    void start()
+    {
+        thread = std::thread{ [this] { process(); } };
+    }
+
+    void join()
+    {
+        thread.join();
+    }
+
 private:
     WSADATA wsa;
     std::string host;
@@ -393,6 +404,7 @@ private:
     UdpSocketContext udp_socket_data;
     fd_set readfds;
     fd_set writefds;
+    std::thread thread;
     bool canExit;
 
     static const int UDP_SIZE = 512;
@@ -450,7 +462,30 @@ void DNSServer::addRecord(DNSRecordType type, const std::string& host, const std
     impl->addRecord(type, host, answer);
 }
 
-void DNSServer::process()
+void DNSServer::start()
 {
-    impl->process();
+    impl->start();
+}
+
+void DNSServer::join()
+{
+    impl->join();
+}
+
+DNSClient::DNSClient(const std::string& host, int port)
+    : host(host)
+    , port(port)
+{}
+
+void DNSClient::requestUdp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host)
+{
+    DNSPackage package;
+    package.header.ID = id;
+    package.header.flags.RD = 1;
+    package.header.QDCOUNT = 1;
+}
+
+void DNSClient::requestTcp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host)
+{
+
 }

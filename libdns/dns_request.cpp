@@ -7,6 +7,13 @@ DNSRequest::DNSRequest()
     , cls(0)
 {}
 
+DNSRequest::DNSRequest(DNSRecordType type, const std::string& name)
+    : name(name)
+    , type(static_cast<uint16_t>(type))
+    , cls(0)
+{}
+
+
 DNSRequest::DNSRequest(const uint8_t* const orig, const uint8_t*& data)
     : name(get_domain(orig, data))
     , type(get_uint16(data))

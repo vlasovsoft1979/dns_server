@@ -14,7 +14,8 @@ int main(int argc, char* argv[])
     try
     {
         DNSServer server(argv[1]);
-        server.process();
+        server.start();
+        server.join();
     }
     catch (const std::exception& e)
     {

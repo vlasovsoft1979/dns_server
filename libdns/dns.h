@@ -6,6 +6,7 @@
 #include <map>
 
 #include "dns_consts.h"
+#include "dns_package.h"
 
 class DNSServerImpl;
 
@@ -17,8 +18,22 @@ public:
     ~DNSServer();
 
     void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer);
-    void process();
+    void start();
+    void join();
 
 private:
     std::unique_ptr<DNSServerImpl> impl;
+};
+
+class DNSClient
+{
+public:
+    DNSClient(const std::string& host, int port);
+
+    void requestUdp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host);
+    void requestTcp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host);
+
+private:
+    std::string host;
+    int port;
 };
