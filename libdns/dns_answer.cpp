@@ -24,23 +24,15 @@ public:
         {
             throw std::runtime_error("invalid DNS answer of type A");
         }
-        for (int i = 0; i < len; ++i)
-        {
-            addr[i] = data[i];
-        }
+        std::copy(data, data + 4, addr);
         data += len;
     }
     DNSAnswerExtA(const std::string& data)
     {
-        sockaddr_in sa;
-        if (0 == inet_pton(AF_INET, data.c_str(), &sa.sin_addr))
+        if (!str_to_ipv4(data, addr))
         {
-            throw std::runtime_error("invalid IPv4 address");
+            std::fill(addr, addr + 4, 0);
         }
-        addr[0] = sa.sin_addr.S_un.S_un_b.s_b1;
-        addr[1] = sa.sin_addr.S_un.S_un_b.s_b2;
-        addr[2] = sa.sin_addr.S_un.S_un_b.s_b3;
-        addr[3] = sa.sin_addr.S_un.S_un_b.s_b4;
     }
     virtual ~DNSAnswerExtA() {}
     virtual void append(DNSBuffer& buf) const override

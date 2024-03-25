@@ -15,3 +15,9 @@ void append_uint16(std::vector<uint8_t>& buf, uint16_t val);
 void append_uint32(std::vector<uint8_t>& buf, uint32_t val);
 
 DNSRecordType StrToRecType(const std::string& str);
+
+bool str_to_ipv4(const std::string& val, uint8_t out[4]);
+bool str_to_ipv6(const std::string& val, uint8_t out[16]);
+
+std::string ipv4_to_str(uint8_t addr[4]);
+std::string ipv6_to_str(uint8_t addr[16]);
