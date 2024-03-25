@@ -1,6 +1,10 @@
 find_package(jsoncpp CONFIG REQUIRED)
 
-add_library(dns STATIC dns.cpp dns.h)
+add_library(dns STATIC
+    dns_consts.h
+    dns_utils.cpp dns_utils.h 
+    dns.cpp dns.h
+)
 
 target_include_directories(dns PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(dns PRIVATE JsonCpp::JsonCpp)
