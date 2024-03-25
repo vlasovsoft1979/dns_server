@@ -62,20 +62,18 @@ std::string get_domain(const uint8_t* const orig, const uint8_t*& data)
             result = result.empty() ?
                 label :
                 result.append(".").append(label);
-            curr += len;
-            curr += 1;
+            curr += static_cast<size_t>(len) + 1u;
             if (!compressed)
             {
-                data += len;
-                data += 1;
+                data += static_cast<size_t>(len) + 1u;
             }
         }
         else if (3 == type)
         {
-            curr = orig + (static_cast<uint16_t>(*curr & 0b00111111) << 8) + curr[1];
+            curr = orig + (static_cast<size_t>(curr[0] & 0x3F) << 8) + curr[1];
             if (!compressed)
             {
-                data += 2;
+                data += 2u;
             }
             compressed = true;
         }
