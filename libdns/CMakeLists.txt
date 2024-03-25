@@ -2,7 +2,9 @@ find_package(jsoncpp CONFIG REQUIRED)
 
 add_library(dns STATIC
     dns_consts.h
-    dns_utils.cpp dns_utils.h 
+    dns_utils.cpp dns_utils.h
+    dns_header.cpp dns_header.h
+    dns_buffer.cpp dns_buffer.h 
     dns.cpp dns.h
 )
 

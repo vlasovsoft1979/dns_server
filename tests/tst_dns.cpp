@@ -3,6 +3,7 @@
 #include <json/json.h>
 
 #include "dns.h"
+#include "dns_buffer.h"
 
 char fromHex(char c)
 {

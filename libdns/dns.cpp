@@ -10,55 +10,8 @@
 
 #include "dns.h"
 #include "dns_utils.h"
-
-DNSHeaderFlags::DNSHeaderFlags()
-    : QR(0)
-    , Opcode(0)
-    , AA(0)
-    , TC(0)
-    , RD(0)
-    , RA(0)
-    , Z(0)
-    , RCODE(0)
-{}
-
-DNSHeaderFlags::DNSHeaderFlags(const uint8_t*& data)
-{
-    uint16_t val = get_uint16(data);
-    *this = *reinterpret_cast<const DNSHeaderFlags*>(&val);
-}
-
-void DNSHeaderFlags::append(DNSBuffer& buf) const
-{
-    buf.append(*reinterpret_cast<const uint16_t*>(this));
-}
-
-DNSHeader::DNSHeader()
-    : ID(0)
-    , QDCOUNT(0)
-    , ANCOUNT(0)
-    , NSCOUNT(0)
-    , ARCOUNT(0)
-{}
-
-DNSHeader::DNSHeader(const uint8_t*& data)
-    : ID(get_uint16(data))
-    , flags(data)
-    , QDCOUNT(get_uint16(data))
-    , ANCOUNT(get_uint16(data))
-    , NSCOUNT(get_uint16(data))
-    , ARCOUNT(get_uint16(data))
-{}
-
-void DNSHeader::append(DNSBuffer& buf) const
-{
-    buf.append(ID);
-    flags.append(buf);
-    buf.append(QDCOUNT);
-    buf.append(ANCOUNT);
-    buf.append(NSCOUNT);
-    buf.append(ARCOUNT);
-}
+#include "dns_header.h"
+#include "dns_buffer.h"
 
 DNSRequest::DNSRequest()
     : type(0)
@@ -437,87 +390,6 @@ std::ostream& operator << (std::ostream& stream, const DNSHeader& header)
 std::ostream& operator << (std::ostream& stream, const DNSRequest& req)
 {
     return stream << req.name << " " << req.type << " " << req.cls << "\n";
-}
-
-DNSBuffer::DNSBuffer()
-    : data_start(0u)
-    , max_size(0u)
-{
-    result.reserve(512);
-}
-
-void DNSBuffer::append_domain(const std::string& str)
-{
-    if (str.empty())
-    {
-        result.push_back('\0');
-        return;
-    }
-    auto iter = compress.find(str);
-    if (iter != compress.end())
-    {
-        uint16_t val = static_cast<uint16_t>(iter->second);
-        val |= 0xc000;
-        append(val);
-    }
-    else
-    {
-        auto offset = result.size() - data_start;
-        auto pos = str.find('.');
-        if (pos != std::string::npos)
-        {
-            auto before = str.substr(0, pos);
-            append_label(before);
-            compress.emplace(str, offset);
-            auto after = str.substr(pos + 1);
-            append_domain(after);
-        }
-        else
-        {
-            append_label(str);
-            compress.emplace(str, offset);
-            result.push_back('\0');
-        }
-    }
-}
-
-void DNSBuffer::append_label(const std::string& str)
-{
-    result.push_back(static_cast<uint8_t>(str.size()));
-    result.insert(result.end(), str.begin(), str.end());
-}
-
-void DNSBuffer::append(uint16_t val)
-{
-    ::append_uint16(result, val);
-}
-
-void DNSBuffer::append(uint32_t val)
-{
-    ::append_uint32(result, val);
-}
-
-void DNSBuffer::append(uint8_t val)
-{
-    result.push_back(val);
-}
-
-void DNSBuffer::append(const uint8_t* ptr, size_t size)
-{
-    result.insert(result.end(), ptr, ptr + size);
-}
-
-void DNSBuffer::overwrite_uint16(size_t pos, uint16_t val)
-{
-    *reinterpret_cast<uint16_t*>(&result[pos]) = htons(val);
-}
-
-void DNSBuffer::clear()
-{
-    data_start = 0u;
-    max_size = 0u;
-    result.clear();
-    compress.clear();
 }
 
 class DNSServerImpl
