@@ -4,7 +4,11 @@ add_library(dns STATIC
     dns_consts.h
     dns_utils.cpp dns_utils.h
     dns_header.cpp dns_header.h
-    dns_buffer.cpp dns_buffer.h 
+    dns_buffer.cpp dns_buffer.h
+    dns_request.cpp dns_request.h
+    dns_answer.cpp dns_answer.h
+    dns_auth_server.cpp dns_auth_server.h
+    dns_package.cpp dns_package.h
     dns.cpp dns.h
 )
 

@@ -4,6 +4,8 @@
 
 #include "dns.h"
 #include "dns_buffer.h"
+#include "dns_header.h"
+#include "dns_package.h"
 
 char fromHex(char c)
 {
