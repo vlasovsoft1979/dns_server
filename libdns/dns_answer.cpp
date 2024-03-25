@@ -121,11 +121,7 @@ public:
         buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
         buf.append_domain(text);
         // little hack: overwrite calculated size
-        size_t size = buf.result.size() - pos - 2;
-        if (size != 0)
-        {
-            *reinterpret_cast<uint16_t*>(&buf.result[pos]) = htons(static_cast<uint16_t>(size));
-        }
+        buf.overwrite_uint16(pos, static_cast<uint16_t>(buf.result.size() - pos - sizeof(uint16_t)));
     }
 
 private:
