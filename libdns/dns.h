@@ -30,6 +30,7 @@ class DNSClient
 public:
     DNSClient(const std::string& host, int port);
 
+    bool command(const std::string& cmd);
     void requestUdp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host);
     void requestTcp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host);
 

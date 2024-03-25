@@ -1,11 +1,15 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <json/json.h>
+#include <chrono>
+#include <thread>
 
 #include "dns.h"
 #include "dns_buffer.h"
 #include "dns_header.h"
 #include "dns_package.h"
+
+static const std::string host = "127.0.0.1";
 
 char fromHex(char c)
 {
@@ -41,6 +45,11 @@ std::string toHex(const std::vector<uint8_t> vec)
         result.push_back(table[c & 0b00001111]);
     }
     return result;
+}
+
+inline void sleep(unsigned ms)
+{
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
 TEST(Dns, ParseQueryHeaderFlags)
@@ -183,6 +192,26 @@ TEST(Dns, ParseResponse_TypeCNAME_Success)
     DNSBuffer buf;
     package.append(buf);
     ASSERT_EQ(pkg, toHex(buf.result));
+}
+
+TEST(Dns, DNSServer_quit_command_works)
+{
+    DNSServer server(host, 10000);
+    server.start();
+    sleep(20);
+    DNSClient client(host, 10000);
+    ASSERT_TRUE(client.command("quit"));
+    server.join();
+}
+
+TEST(Dns, DNSServer_exit_command_works)
+{
+    DNSServer server(host, 10000);
+    server.start();
+    sleep(20);
+    DNSClient client(host, 10000);
+    ASSERT_TRUE(client.command("exit"));
+    server.join();
 }
 
 int main(int argc, char** argv)

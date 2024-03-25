@@ -179,7 +179,7 @@ class DNSServerImpl
         if (udp_socket_data.request.size() < sizeof(DNSHeader))
         {
             std::string cmd(udp_socket_data.request.begin(), udp_socket_data.request.end());
-            if (cmd == "quit\n" || cmd == "exit\n")
+            if (cmd == "quit" || cmd == "exit")
             {
                 canExit = true;
                 cmd = "Terminating...\n";
@@ -487,5 +487,24 @@ void DNSClient::requestUdp(DNSPackage& result, uint16_t id, DNSRecordType type, 
 
 void DNSClient::requestTcp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host)
 {
+    DNSPackage package;
+    package.header.ID = id;
+    package.header.flags.RD = 1;
+    package.header.QDCOUNT = 1;
+}
 
+bool DNSClient::command(const std::string& cmd)
+{
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s == INVALID_SOCKET)
+    {
+        throw std::runtime_error("Can't create UDP socket");
+    }
+    sockaddr_in server = {0};
+    server.sin_family = AF_INET;
+    server.sin_port = htons(port);
+    inet_pton(AF_INET, host.c_str(), &server.sin_addr.S_un.S_addr);
+
+    int length = sendto(s, cmd.c_str(), static_cast<int>(cmd.size()), 0, reinterpret_cast<sockaddr*>(&server), static_cast<int>(sizeof(server)));
+    return length == cmd.size();
 }
