@@ -528,7 +528,10 @@ DNSPackage DNSClient::requestTcp(uint16_t id, DNSRecordType type, const std::str
     package.header.QDCOUNT = 1;
     package.requests.emplace_back(DNSRequest{ type, host });
     DNSBuffer buf;
+    buf.append(static_cast<uint16_t>(0u));  // SIZE (will be calculated later)
+    buf.data_start = buf.result.size();
     package.append(buf);
+    buf.overwrite_uint16(0, static_cast<uint16_t>(buf.result.size() - sizeof(uint16_t)));
 
     SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
     if (s == INVALID_SOCKET)

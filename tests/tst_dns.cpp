@@ -237,6 +237,8 @@ TEST_F(DnsServerFixture, CanHandleRequestTypeA)
     server.addRecord(DNSRecordType::A, "domain.com", { "1.1.1.1", "2.2.2.2", "3.3.3.3" });
 
     DNSPackage result_udp = client.requestUdp(555, DNSRecordType::A, "domain.com");
+    ASSERT_EQ(555, result_udp.header.ID);
+    ASSERT_EQ(DNSResultCode::NoError, static_cast<DNSResultCode>(result_udp.header.flags.RCODE));
     ASSERT_EQ(3, result_udp.header.ANCOUNT);
     ASSERT_EQ(3, result_udp.answers.size());
     ASSERT_EQ(std::string{ "1.1.1.1" }, result_udp.answers[0].decode());
@@ -244,6 +246,8 @@ TEST_F(DnsServerFixture, CanHandleRequestTypeA)
     ASSERT_EQ(std::string{ "3.3.3.3" }, result_udp.answers[2].decode());
     
     DNSPackage result_tcp = client.requestTcp(777, DNSRecordType::A, "domain.com");
+    ASSERT_EQ(777, result_tcp.header.ID);
+    ASSERT_EQ(DNSResultCode::NoError, static_cast<DNSResultCode>(result_tcp.header.flags.RCODE));
     ASSERT_EQ(3, result_tcp.header.ANCOUNT);
     ASSERT_EQ(3, result_tcp.answers.size());
     ASSERT_EQ(std::string{ "1.1.1.1" }, result_tcp.answers[0].decode());
@@ -251,10 +255,22 @@ TEST_F(DnsServerFixture, CanHandleRequestTypeA)
     ASSERT_EQ(std::string{ "3.3.3.3" }, result_tcp.answers[2].decode());
 }
 
+TEST_F(DnsServerFixture, HostNotFoundForRequestTypeA)
+{
+    server.addRecord(DNSRecordType::A, "domain.com", { "1.1.1.1", "2.2.2.2", "3.3.3.3" });
+    DNSPackage result_udp = client.requestUdp(555, DNSRecordType::A, "domain1.com");
+    ASSERT_EQ(555, result_udp.header.ID);
+    ASSERT_EQ(DNSResultCode::NameError, static_cast<DNSResultCode>(result_udp.header.flags.RCODE));
+    ASSERT_EQ(0, result_udp.header.ANCOUNT);
+    ASSERT_EQ(0, result_udp.answers.size());
+}
+
 TEST_F(DnsServerFixture, CanHandleRequestTypeCname)
 {
     server.addRecord(DNSRecordType::CNAME, "alias.domain.com", { "domain.com" });
     DNSPackage result = client.requestUdp(555, DNSRecordType::CNAME, "alias.domain.com");
+    ASSERT_EQ(555, result.header.ID);
+    ASSERT_EQ(DNSResultCode::NoError, static_cast<DNSResultCode>(result.header.flags.RCODE));
     ASSERT_EQ(1, result.header.ANCOUNT);
     ASSERT_EQ(1, result.answers.size());
     ASSERT_EQ(std::string{ "domain.com" }, result.answers[0].decode());
@@ -264,6 +280,8 @@ TEST_F(DnsServerFixture, CanHandleRequestTypePtr)
 {
     server.addRecord(DNSRecordType::PTR, "139.238.125.74.in-addr.arpa", { "domain1.com", "domain2.com" });
     DNSPackage result = client.requestUdp(555, DNSRecordType::PTR, "139.238.125.74.in-addr.arpa");
+    ASSERT_EQ(555, result.header.ID);
+    ASSERT_EQ(DNSResultCode::NoError, static_cast<DNSResultCode>(result.header.flags.RCODE));
     ASSERT_EQ(2, result.header.ANCOUNT);
     ASSERT_EQ(2, result.answers.size());
     ASSERT_EQ(std::string{ "domain1.com" }, result.answers[0].decode());
@@ -274,6 +292,8 @@ TEST_F(DnsServerFixture, CanHandleRequestTypeMx)
 {
     server.addRecord(DNSRecordType::MX, "domain.com", { "mx1.domain.com", "mx2.domain.com", "mx3.domain.com" });
     DNSPackage result = client.requestUdp(555, DNSRecordType::MX, "domain.com");
+    ASSERT_EQ(555, result.header.ID);
+    ASSERT_EQ(DNSResultCode::NoError, static_cast<DNSResultCode>(result.header.flags.RCODE));
     ASSERT_EQ(3, result.header.ANCOUNT);
     ASSERT_EQ(3, result.answers.size());
     ASSERT_EQ(std::string{ "mx1.domain.com" }, result.answers[0].decode());
@@ -285,6 +305,8 @@ TEST_F(DnsServerFixture, CanHandleRequestTypeTxt)
 {
     server.addRecord(DNSRecordType::TXT, "domain.com", { "text message 1", "text message 2", "text message 3" });
     DNSPackage result = client.requestUdp(555, DNSRecordType::TXT, "domain.com");
+    ASSERT_EQ(555, result.header.ID);
+    ASSERT_EQ(DNSResultCode::NoError, static_cast<DNSResultCode>(result.header.flags.RCODE));
     ASSERT_EQ(3, result.header.ANCOUNT);
     ASSERT_EQ(3, result.answers.size());
     ASSERT_EQ(std::string{ "text message 1" }, result.answers[0].decode());
