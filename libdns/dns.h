@@ -32,7 +32,7 @@ public:
 
     bool command(const std::string& cmd);
     DNSPackage requestUdp(uint16_t id, DNSRecordType type, const std::string& host);
-    void requestTcp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host);
+    DNSPackage requestTcp(uint16_t id, DNSRecordType type, const std::string& host);
 
 private:
     std::string host;

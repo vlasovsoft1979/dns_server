@@ -110,14 +110,14 @@ bool str_to_ipv6(const std::string& val, uint8_t out[16])
     return 0 != inet_pton(AF_INET6, val.c_str(), out);
 }
 
-std::string ipv4_to_str(uint8_t addr[4])
+std::string ipv4_to_str(uint8_t const addr[4])
 {
     char buf[INET_ADDRSTRLEN] = {0};
     inet_ntop(AF_INET, addr, buf, INET_ADDRSTRLEN);
     return std::string(buf);
 }
 
-std::string ipv6_to_str(uint8_t addr[16])
+std::string ipv6_to_str(uint8_t const addr[16])
 {
     char buf[INET6_ADDRSTRLEN] = { 0 };
     inet_ntop(AF_INET6, addr, buf, INET_ADDRSTRLEN);

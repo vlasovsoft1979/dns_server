@@ -1,6 +1,6 @@
 #pragma once
 
-enum class DNSRecordType : uint16_t
+enum class DNSRecordType
 {
     OTHER = 0,
     A = 1,
@@ -19,3 +19,5 @@ enum class DNSResultCode
     NotImplemented = 4,
     Refused = 5
 };
+
+#define UDP_SIZE 512

@@ -406,11 +406,7 @@ private:
     fd_set writefds;
     std::thread thread;
     bool canExit;
-
-    static const int UDP_SIZE = 512;
 };
-
-const int DNSServerImpl::UDP_SIZE;
 
 DNSServer::DNSServer(const std::string& host, int port)
     : impl(new DNSServerImpl{host, port})
@@ -465,6 +461,7 @@ void DNSServer::addRecord(DNSRecordType type, const std::string& host, const std
 void DNSServer::start()
 {
     impl->start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
 void DNSServer::join()
@@ -486,7 +483,7 @@ DNSPackage DNSClient::requestUdp(uint16_t id, DNSRecordType type, const std::str
     package.requests.emplace_back(DNSRequest{ type, host });
     DNSBuffer buf;
     package.append(buf);
-    if (buf.result.size() > 512)
+    if (buf.result.size() > UDP_SIZE)
     {
         throw std::runtime_error("UDP request too big");
     }
@@ -499,19 +496,18 @@ DNSPackage DNSClient::requestUdp(uint16_t id, DNSRecordType type, const std::str
     sockaddr_in server = { 0 };
     server.sin_family = AF_INET;
     server.sin_port = htons(port);
-    inet_pton(AF_INET, host.c_str(), &server.sin_addr.S_un.S_addr);
+    inet_pton(AF_INET, this->host.c_str(), &server.sin_addr.S_un.S_addr);
 
-    int len = sendto(s, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0, reinterpret_cast<sockaddr*>(&server), static_cast<int>(sizeof(server)));
-    if (len < buf.result.size())
+    int bytes_sent = sendto(s, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0, reinterpret_cast<sockaddr*>(&server), static_cast<int>(sizeof(server)));
+    if (bytes_sent < buf.result.size())
     {
         int code = WSAGetLastError();
         throw std::runtime_error("Error sending UDP data");
     }
     
-    std::vector<uint8_t> in_buf(512, 0);
-    int from_len = sizeof(sockaddr_in);
-    len = recvfrom(s, reinterpret_cast<char*>(&in_buf[0]), static_cast<int>(in_buf.size()), 0, reinterpret_cast<sockaddr*>(&server), &from_len);
-    if (len < 0)
+    std::vector<uint8_t> in_buf(UDP_SIZE, 0);
+    int bytes_received = recvfrom(s, reinterpret_cast<char*>(&in_buf[0]), static_cast<int>(in_buf.size()), 0, nullptr, nullptr);
+    if (bytes_received < 0)
     {
         int code = WSAGetLastError();
         throw std::runtime_error("Error receiving UDP data");
@@ -524,12 +520,61 @@ DNSPackage DNSClient::requestUdp(uint16_t id, DNSRecordType type, const std::str
     return response;
 }
 
-void DNSClient::requestTcp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host)
+DNSPackage DNSClient::requestTcp(uint16_t id, DNSRecordType type, const std::string& host)
 {
     DNSPackage package;
     package.header.ID = id;
     package.header.flags.RD = 1;
     package.header.QDCOUNT = 1;
+    package.requests.emplace_back(DNSRequest{ type, host });
+    DNSBuffer buf;
+    package.append(buf);
+
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET)
+    {
+        throw std::runtime_error("Can't create TCP socket");
+    }
+    sockaddr_in server = { 0 };
+    server.sin_family = AF_INET;
+    server.sin_port = htons(port);
+    inet_pton(AF_INET, this->host.c_str(), &server.sin_addr.S_un.S_addr);
+
+    int result = connect(s, reinterpret_cast<sockaddr*>(&server), sizeof(server));
+    if (result == SOCKET_ERROR) {
+        throw std::runtime_error("Can't connect to server");
+    }
+
+    int bytes_sent = send(s, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0);
+    if (bytes_sent < buf.result.size())
+    {
+        int code = WSAGetLastError();
+        throw std::runtime_error("Error sending TCP data");
+    }
+
+    std::vector<uint8_t> in_buf(sizeof(uint16_t), 0);
+    int bytes_received = recv(s, reinterpret_cast<char*>(&in_buf[0]), static_cast<int>(in_buf.size()), 0);
+    if (bytes_received < 0)
+    {
+        int code = WSAGetLastError();
+        throw std::runtime_error("Error receiving TCP data");
+    }
+
+    const uint8_t* ptr = &in_buf[0];
+    uint16_t size = get_uint16(ptr);
+    in_buf.resize(in_buf.size() + size, 0);
+    bytes_received = recv(s, reinterpret_cast<char*>(&in_buf[sizeof(uint16_t)]), static_cast<int>(size), 0);
+    if (bytes_received < 0)
+    {
+        int code = WSAGetLastError();
+        throw std::runtime_error("Error receiving TCP data");
+    }
+
+    closesocket(s);
+
+    DNSPackage response(&in_buf[sizeof(uint16_t)]);
+
+    return response;
 }
 
 bool DNSClient::command(const std::string& cmd)

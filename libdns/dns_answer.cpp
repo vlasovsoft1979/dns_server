@@ -12,6 +12,7 @@ class DNSAnswerExt
 {
 public:
     virtual void append(DNSBuffer&) const = 0;
+    virtual std::string decode() const = 0;
 };
 
 class DNSAnswerExtA : public DNSAnswerExt
@@ -34,11 +35,14 @@ public:
             std::fill(addr, addr + 4, 0);
         }
     }
-    virtual ~DNSAnswerExtA() {}
-    virtual void append(DNSBuffer& buf) const override
+    void append(DNSBuffer& buf) const override
     {
         buf.append(static_cast<uint16_t>(sizeof(addr)));
         buf.append(addr, sizeof(addr));
+    }
+    std::string decode() const override
+    {
+        return ipv4_to_str(addr);
     }
 
 private:
@@ -57,10 +61,14 @@ public:
     DNSAnswerExtTxt(const std::string& text)
         : text(text)
     {}
-    virtual void append(DNSBuffer& buf) const override
+    void append(DNSBuffer& buf) const override
     {
         buf.append(static_cast<uint16_t>(text.size() + sizeof(uint8_t)));
         buf.append_label(text);
+    }
+    std::string decode() const override
+    {
+        return text;
     }
 
 private:
@@ -81,7 +89,7 @@ public:
         : text(text)
         , preference(10)
     {}
-    virtual void append(DNSBuffer& buf) const override
+    void append(DNSBuffer& buf) const override
     {
         size_t pos = buf.result.size();
         buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
@@ -89,6 +97,10 @@ public:
         buf.append_domain(text);
         // little hack: overwrite calculated size
         buf.overwrite_uint16(pos, static_cast<uint16_t>(buf.result.size() - pos - sizeof(uint16_t)));
+    }
+    std::string decode() const override
+    {
+        return text;
     }
 
 private:
@@ -107,13 +119,17 @@ public:
     DNSAnswerExtCname(const std::string& data)
         : text(data)
     {}
-    virtual void append(DNSBuffer& buf) const override
+    void append(DNSBuffer& buf) const override
     {
         size_t pos = buf.result.size();
         buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
         buf.append_domain(text);
         // little hack: overwrite calculated size
         buf.overwrite_uint16(pos, static_cast<uint16_t>(buf.result.size() - pos - sizeof(uint16_t)));
+    }
+    std::string decode() const override
+    {
+        return text;
     }
 
 private:
@@ -131,13 +147,17 @@ public:
     DNSAnswerExtPtr(const std::string& data)
         : host(data)
     {}
-    virtual void append(DNSBuffer& buf) const override
+    void append(DNSBuffer& buf) const override
     {
         size_t pos = buf.result.size();
         buf.append(static_cast<uint16_t>(0));  // SIZE (will be calculated later)
         buf.append_domain(host);
         // little hack: overwrite calculated size
         buf.overwrite_uint16(pos, static_cast<uint16_t>(buf.result.size() - pos - sizeof(uint16_t)));
+    }
+    std::string decode() const override
+    {
+        return host;
     }
 
 private:
@@ -213,4 +233,9 @@ void DNSAnswer::append(DNSBuffer& buf) const
     {
         ext->append(buf);
     }
+}
+
+std::string DNSAnswer::decode() const
+{
+    return ext->decode();
 }

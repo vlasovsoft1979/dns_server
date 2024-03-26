@@ -16,6 +16,7 @@ public:
     ~DNSAnswer();
 
     void append(DNSBuffer& buf) const;
+    std::string decode() const;
 
 public:
     std::string name;
