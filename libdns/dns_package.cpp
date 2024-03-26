@@ -48,7 +48,6 @@ void DNSPackage::addAnswer(DNSRecordType type, const std::string& name, const st
     if (answer.ext.get() != nullptr)
     {
         answer.name = name;
-        answer.type = 1;
         answer.cls = 1;
         answer.ttl = 3600;
         answers.push_back(answer);

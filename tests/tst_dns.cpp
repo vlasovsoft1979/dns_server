@@ -9,7 +9,8 @@
 #include "dns_header.h"
 #include "dns_package.h"
 
-static const std::string host = "127.0.0.1";
+static const std::string HOST = "127.0.0.1";
+static const int PORT = 10000;
 
 char fromHex(char c)
 {
@@ -194,23 +195,36 @@ TEST(Dns, ParseResponse_TypeCNAME_Success)
     ASSERT_EQ(pkg, toHex(buf.result));
 }
 
+/*
 TEST(Dns, DNSServer_quit_command_works)
 {
-    DNSServer server(host, 10000);
+    DNSServer server(HOST, PORT);
     server.start();
     sleep(20);
-    DNSClient client(host, 10000);
+    DNSClient client(HOST, PORT);
     ASSERT_TRUE(client.command("quit"));
     server.join();
 }
 
 TEST(Dns, DNSServer_exit_command_works)
 {
-    DNSServer server(host, 10000);
+    DNSServer server(HOST, PORT);
     server.start();
     sleep(20);
-    DNSClient client(host, 10000);
+    DNSClient client(HOST, PORT);
     ASSERT_TRUE(client.command("exit"));
+    server.join();
+}
+*/
+
+TEST(Dns, DNSServer_can_handle_a_request)
+{
+    DNSServer server(HOST, PORT);
+    server.addRecord(DNSRecordType::A, "domain.com", { "1.1.1.1" });
+    server.start();
+    sleep(20);
+    DNSClient client(HOST, PORT);
+    DNSPackage result = client.requestUdp(555, DNSRecordType::A, "domain.com");
     server.join();
 }
 

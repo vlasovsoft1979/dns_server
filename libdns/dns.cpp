@@ -477,12 +477,51 @@ DNSClient::DNSClient(const std::string& host, int port)
     , port(port)
 {}
 
-void DNSClient::requestUdp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host)
+DNSPackage DNSClient::requestUdp(uint16_t id, DNSRecordType type, const std::string& host)
 {
     DNSPackage package;
     package.header.ID = id;
     package.header.flags.RD = 1;
     package.header.QDCOUNT = 1;
+    package.requests.emplace_back(DNSRequest{ type, host });
+    DNSBuffer buf;
+    package.append(buf);
+    if (buf.result.size() > 512)
+    {
+        throw std::runtime_error("UDP request too big");
+    }
+
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s == INVALID_SOCKET)
+    {
+        throw std::runtime_error("Can't create UDP socket");
+    }
+    sockaddr_in server = { 0 };
+    server.sin_family = AF_INET;
+    server.sin_port = htons(port);
+    inet_pton(AF_INET, host.c_str(), &server.sin_addr.S_un.S_addr);
+
+    int len = sendto(s, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0, reinterpret_cast<sockaddr*>(&server), static_cast<int>(sizeof(server)));
+    if (len < buf.result.size())
+    {
+        int code = WSAGetLastError();
+        throw std::runtime_error("Error sending UDP data");
+    }
+    
+    std::vector<uint8_t> in_buf(512, 0);
+    int from_len = sizeof(sockaddr_in);
+    len = recvfrom(s, reinterpret_cast<char*>(&in_buf[0]), static_cast<int>(in_buf.size()), 0, reinterpret_cast<sockaddr*>(&server), &from_len);
+    if (len < 0)
+    {
+        int code = WSAGetLastError();
+        throw std::runtime_error("Error receiving UDP data");
+    }
+
+    closesocket(s);
+
+    DNSPackage response(&in_buf[0]);
+
+    return response;
 }
 
 void DNSClient::requestTcp(DNSPackage& result, uint16_t id, DNSRecordType type, const std::string& host)
@@ -506,5 +545,8 @@ bool DNSClient::command(const std::string& cmd)
     inet_pton(AF_INET, host.c_str(), &server.sin_addr.S_un.S_addr);
 
     int length = sendto(s, cmd.c_str(), static_cast<int>(cmd.size()), 0, reinterpret_cast<sockaddr*>(&server), static_cast<int>(sizeof(server)));
+ 
+    closesocket(s);
+
     return length == cmd.size();
 }
