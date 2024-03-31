@@ -11,9 +11,9 @@ add_library(dns STATIC
     dns_package.cpp dns_package.h
     dns_selector.cpp dns_selector.h
     dns_socket.cpp dns_socket.h
+    dns_client.cpp dns_client.h
     dns.cpp dns.h
 )
-
 
 target_include_directories(dns PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(dns PRIVATE JsonCpp::JsonCpp)

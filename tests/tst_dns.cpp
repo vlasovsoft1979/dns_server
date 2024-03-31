@@ -6,6 +6,7 @@
 #include "dns_buffer.h"
 #include "dns_header.h"
 #include "dns_package.h"
+#include "dns_client.h"
 
 static const std::string HOST = "127.0.0.1";
 static const int PORT = 10000;
