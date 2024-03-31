@@ -1,5 +1,8 @@
 #include "dns_socket.h"
 
+#include <stdexcept>
+#include <utility>
+
 #ifndef _WIN32
 #include <fcntl.h>
 #include <unistd.h>
@@ -13,27 +16,35 @@ void closesocket(SOCKET s)
 }
 #endif
 
-bool setupsocket(SOCKET fd)
+void setupsocket(SOCKET s)
 {
-   if (fd < 0) return false;
+   if (s < 0)
+   {
+      throw std::runtime_error("setupsocket error: invalid socket");
+   }
 
 #ifdef _WIN32
    unsigned long mode = 1;
-   return (ioctlsocket(fd, FIONBIO, &mode) == 0);
+   if (ioctlsocket(s, FIONBIO, &mode) != 0)
+   {
+      throw std::runtime_error("setupsocket error: ioctlsocket()");
+   }
 #else
    int option = 1;
-   if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) < 0)
+   if (setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option)) < 0)
    {
-       return false;
+       throw std::runtime_error("setupsocket error: setsockopt()");
    }
-   int flags = fcntl(fd, F_GETFL, 0);
-   if (flags == -1) return false;
+   int flags = fcntl(s, F_GETFL, 0);
+   if (flags == -1)
+   {
+      throw std::runtime_error("setupsocket error: fcntl(F_GETFL)");
+   }
    flags = flags | O_NONBLOCK;
-   if (fcntl(fd, F_SETFL, flags) < 0)
+   if (fcntl(s, F_SETFL, flags) < 0)
    {
-        return false;
+        throw std::runtime_error("setupsocket error: fcntl(F_SETFL)");
    }
-   return true;
 #endif
 }
 

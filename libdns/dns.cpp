@@ -1,3 +1,5 @@
+#include "dns.h"
+
 #if defined(_WIN32)
 #include <WinSock2.h>
 #include <ws2tcpip.h>
@@ -5,19 +7,13 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
 #endif
-#include <stdint.h>
-#include <ostream>
-#include <iostream>
+
 #include <fstream>
-#include <set>
 #include <algorithm>
 #include <thread>
 #include <json/json.h>
 
-#include "dns.h"
 #include "dns_utils.h"
 #include "dns_header.h"
 #include "dns_buffer.h"
@@ -64,16 +60,23 @@ class DNSServerImpl: private ISocketHandler
 
     void closeTcpSocket(SOCKET s)
     {
-        selector.removeReadSocket(s);
-        selector.removeWriteSocket(s);
-        closesocket(s);
+        if (s != INVALID_SOCKET)
+        {
+            selector.removeReadSocket(s);
+            selector.removeWriteSocket(s);
+            tcp_socket_data.erase(s);
+            closesocket(s);
+        }
     }
 
     void closeUdpSocket(SOCKET s)
     {
-        selector.removeReadSocket(s);
-        selector.removeWriteSocket(s);
-        closesocket(s);
+        if (s != INVALID_SOCKET)
+        {
+            selector.removeReadSocket(s);
+            selector.removeWriteSocket(s);
+            closesocket(s);
+        }
     }
 
     void readTcpSocket(SOCKET s)
@@ -89,7 +92,6 @@ class DNSServerImpl: private ISocketHandler
             {
                 // error or close connection
                 closeTcpSocket(s);
-                tcp_socket_data.erase(s);
                 return;
             }
             ctx.request.insert(ctx.request.end(), buf.begin(), buf.end());
@@ -107,7 +109,6 @@ class DNSServerImpl: private ISocketHandler
             {
                 // error or close connection
                 closeTcpSocket(s);
-                tcp_socket_data.erase(s);
                 return;
             }
             ctx.request.insert(ctx.request.end(), buf.begin(), buf.end());
@@ -131,7 +132,7 @@ class DNSServerImpl: private ISocketHandler
             DNSBuffer buf;
             buf.append(static_cast<uint16_t>(0u));  // SIZE (will be calculated later)
             buf.data_start = buf.result.size();
-            process(&ctx.request[sizeof(uint16_t)], buf);
+            processQuery(&ctx.request[sizeof(uint16_t)], buf);
             buf.overwrite_uint16(0, static_cast<uint16_t>(buf.result.size() - sizeof(uint16_t)));
             ctx.response = std::move(buf.result);
         }
@@ -143,7 +144,6 @@ class DNSServerImpl: private ISocketHandler
             {
                 // error or close connection
                 closeTcpSocket(s);
-                tcp_socket_data.erase(s);
                 return;
             }
             ctx.bytes_sent += bytes_written;
@@ -151,7 +151,6 @@ class DNSServerImpl: private ISocketHandler
             {
                 // all data is sent, close connection
                 closeTcpSocket(s);
-                tcp_socket_data.erase(s);
                 return;
             }
         }
@@ -162,7 +161,6 @@ class DNSServerImpl: private ISocketHandler
 
         // All data is sent. Close connection
         closeTcpSocket(s);
-        tcp_socket_data.erase(s);
     }
 
     void readUdpSocket(SOCKET s)
@@ -205,7 +203,7 @@ class DNSServerImpl: private ISocketHandler
         {
             DNSBuffer buf;
             buf.max_size = UDP_SIZE;
-            process(&udp_socket_data.request[0], buf);
+            processQuery(&udp_socket_data.request[0], buf);
 
             int bytes_to_write = static_cast<int>(buf.result.size());
             sendto(s, reinterpret_cast<const char*>(&buf.result[0]), bytes_to_write, 0, (sockaddr*)&udp_socket_data.client, slen);
@@ -218,7 +216,7 @@ class DNSServerImpl: private ISocketHandler
         udp_socket_data.request.clear();
     }
 
-    void process(const uint8_t* query, DNSBuffer& buf)
+    void processQuery(const uint8_t* query, DNSBuffer& buf)
     {
         DNSPackage package(query);
 
@@ -277,8 +275,11 @@ class DNSServerImpl: private ISocketHandler
             struct sockaddr_storage client_addr;
             socklen_t client_addr_len = sizeof(client_addr);
             SOCKET client = ::accept(s, (struct sockaddr*)&client_addr, &client_addr_len);
-            selector.addReadSocket(client);
-            setupsocket(client);
+            if (client != INVALID_SOCKET)
+            {
+                setupsocket(client);
+                selector.addReadSocket(client);
+            }
         }
         else if (s == socket_udp)
         {
@@ -305,48 +306,54 @@ class DNSServerImpl: private ISocketHandler
 
     void process()
     {
-        sockaddr_in server = { 0 };
-        server.sin_family = AF_INET;
-        server.sin_addr.s_addr = INADDR_ANY;
-        server.sin_port = htons(port);
+        try
+        {
+            sockaddr_in server = { 0 };
+            server.sin_family = AF_INET;
+            server.sin_addr.s_addr = INADDR_ANY;
+            server.sin_port = htons(port);
 
-        // UDP socket
-        if ((socket_udp = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
-        {
-            throw std::runtime_error("Create UDP socket failed");
-        }
-        setupsocket(socket_udp);
-        if (bind(socket_udp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
-        {
-            std::cerr << "Bind error:" << errno << std::endl;
-            throw std::runtime_error("Bind UDP socket failed");
-        }
-        selector.addReadSocket(socket_udp);
+            // UDP socket
+            if ((socket_udp = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
+            {
+                throw std::runtime_error("Create UDP socket failed");
+            }
+            setupsocket(socket_udp);
+            if (bind(socket_udp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
+            {
+                throw std::runtime_error("Bind UDP socket failed");
+            }
+            selector.addReadSocket(socket_udp);
 
-        // TCP socket
-        if ((socket_tcp = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
-        {
-            throw std::runtime_error("Create TCP socket failed");
-        }
-        setupsocket(socket_tcp);
-        if (bind(socket_tcp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
-        {
-            throw std::runtime_error("Bind TCP socket failed");
-        }
-        listen(socket_tcp, 5);
-        selector.addReadSocket(socket_tcp);
+            // TCP socket
+            if ((socket_tcp = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
+            {
+                throw std::runtime_error("Create TCP socket failed");
+            }
+            setupsocket(socket_tcp);
+            if (bind(socket_tcp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
+            {
+                throw std::runtime_error("Bind TCP socket failed");
+            }
+            listen(socket_tcp, 5);
+            selector.addReadSocket(socket_tcp);
 
-        canExit = false;
-        while (!canExit)
+            canExit = false;
+            while (!canExit)
+            {
+                selector.select();
+            }
+        }
+        catch(const std::exception&)
         {
-            selector.select();
+            // TODO: exception handling
         }
 
+        // cleanup
         closeUdpSocket(socket_udp);
-        for (auto it = tcp_socket_data.begin(); it != tcp_socket_data.end();)
+        for (auto elem: tcp_socket_data)
         {
-            closeTcpSocket(it->first);
-            it = tcp_socket_data.erase(it);
+            closeTcpSocket(elem.first);
         }
         closeTcpSocket(socket_tcp);
     }
@@ -360,15 +367,15 @@ public:
         , socket_tcp(INVALID_SOCKET)
 #ifdef _WIN32
         , wsa{0}
-#endif
     {
-#ifdef _WIN32
         if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) 
         {
             throw std::runtime_error("WSAStartup() failed");
         }
-#endif
     }
+#else
+{}
+#endif
 
     void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
     {

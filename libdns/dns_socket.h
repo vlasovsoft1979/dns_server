@@ -10,4 +10,4 @@ typedef int SOCKET;
 void closesocket(SOCKET s);
 #endif
 
-bool setupsocket(SOCKET fd);
+void setupsocket(SOCKET s);

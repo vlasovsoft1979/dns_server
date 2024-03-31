@@ -11,6 +11,8 @@
 #include <string.h>
 #endif
 
+#include <stdexcept>
+
 #include "dns_socket.h"
 #include "dns_request.h"
 #include "dns_buffer.h"
