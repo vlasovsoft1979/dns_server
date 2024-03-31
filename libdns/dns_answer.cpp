@@ -2,9 +2,6 @@
 
 #include <stdexcept>
 
-#include <WinSock2.h> // TODO: remove
-#include <WS2tcpip.h> // TODO: remove
-
 #include "dns_utils.h"
 #include "dns_buffer.h"
 

@@ -1,6 +1,10 @@
 #include "dns_buffer.h"
 
+#if defined(_WIN32)
 #include <WinSock2.h>
+#else
+#include <arpa/inet.h>
+#endif
 
 #include "dns_utils.h"
 

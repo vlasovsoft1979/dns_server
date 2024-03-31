@@ -2,9 +2,6 @@
 
 #include <stdexcept>
 
-#include <WinSock2.h> // TODO: remove
-#include <ws2tcpip.h> // TODO: remove
-
 #include "dns_consts.h"
 
 DNSPackage::DNSPackage(const uint8_t* data)

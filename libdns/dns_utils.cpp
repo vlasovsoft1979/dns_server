@@ -1,9 +1,15 @@
 #include "dns_utils.h"
 
+#include <cctype>
 #include <unordered_map>
 #include <algorithm>
+
+#if defined(_WIN32)
 #include <WinSock2.h>
 #include <WS2tcpip.h>
+#else
+#include <arpa/inet.h>
+#endif
 
 uint8_t get_uint8(const uint8_t*& data)
 {
@@ -95,7 +101,7 @@ DNSRecordType StrToRecType(const std::string& str)
         {"TXT", DNSRecordType::TXT},
     };
     std::string strUpper{ str };
-    std::transform(str.begin(), str.end(), strUpper.begin(), std::toupper);
+    std::transform(str.begin(), str.end(), strUpper.begin(), ::toupper);
     const auto iter = map.find(strUpper);
     return iter != map.end() ? iter->second : DNSRecordType::OTHER;
 }

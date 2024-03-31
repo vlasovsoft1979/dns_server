@@ -1,10 +1,18 @@
-#include <winsock2.h>
+#if defined(_WIN32)
+#include <WinSock2.h>
 #include <ws2tcpip.h>
+#else
+#include <sys/socket.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+#endif
 #include <stdint.h>
 #include <ostream>
 #include <iostream>
 #include <fstream>
-#include <unordered_map>
+#include <set>
 #include <algorithm>
 #include <thread>
 #include <json/json.h>
@@ -15,9 +23,12 @@
 #include "dns_buffer.h"
 #include "dns_request.h"
 #include "dns_package.h"
+#include "dns_selector.h"
 
-class DNSServerImpl
+class DNSServerImpl: private ISocketHandler
 {
+    friend class ISocketHandler;
+
     struct Request
     {
         DNSRecordType type;
@@ -53,15 +64,15 @@ class DNSServerImpl
 
     void closeTcpSocket(SOCKET s)
     {
-        pollfds_del(&readfds, s);
-        pollfds_del(&writefds, s);
+        selector.removeReadSocket(s);
+        selector.removeWriteSocket(s);
         closesocket(s);
     }
 
     void closeUdpSocket(SOCKET s)
     {
-        pollfds_del(&readfds, s);
-        pollfds_del(&writefds, s);
+        selector.removeReadSocket(s);
+        selector.removeWriteSocket(s);
         closesocket(s);
     }
 
@@ -108,8 +119,8 @@ class DNSServerImpl
         }
 
         // now be ready to write response
-        pollfds_del(&readfds, s);
-        pollfds_add(&writefds, s);
+        selector.removeReadSocket(s);
+        selector.addWriteSocket(s);
     }
 
     void writeTcpSocket(SOCKET s)
@@ -157,7 +168,7 @@ class DNSServerImpl
     void readUdpSocket(SOCKET s)
     {
         char message[UDP_SIZE] = {};
-        int slen = sizeof(udp_socket_data.client);
+        socklen_t slen = sizeof(udp_socket_data.client);
         int msg_len = recvfrom(s, message, UDP_SIZE, 0, (sockaddr*)&udp_socket_data.client, &slen);
         if (msg_len <= 0)
         {
@@ -169,8 +180,8 @@ class DNSServerImpl
         udp_socket_data.request.assign(ptr, ptr + msg_len);
 
         // now be ready to write response
-        pollfds_del(&readfds, s);
-        pollfds_add(&writefds, s);
+        selector.removeReadSocket(s);
+        selector.addWriteSocket(s);
     }
 
     void writeUdpSocket(SOCKET s)
@@ -200,10 +211,11 @@ class DNSServerImpl
             sendto(s, reinterpret_cast<const char*>(&buf.result[0]), bytes_to_write, 0, (sockaddr*)&udp_socket_data.client, slen);
         }
 
-        udp_socket_data.request.clear();
+        // now be ready to read requests
+        selector.removeWriteSocket(s);
+        selector.addReadSocket(s);
 
-        pollfds_del(&writefds, s);
-        pollfds_add(&readfds, s);
+        udp_socket_data.request.clear();
     }
 
     void process(const uint8_t* query, DNSBuffer& buf)
@@ -257,126 +269,105 @@ class DNSServerImpl
         }
     }
 
-    static void pollfds_add(fd_set* set, SOCKET fd)
+    // ISocketHandler
+    virtual void socketReadyRead(SOCKET s)
     {
-        FD_SET(fd, set);
+        if (s == socket_tcp)
+        {
+            struct sockaddr_storage client_addr;
+            socklen_t client_addr_len = sizeof(client_addr);
+            SOCKET client = ::accept(s, (struct sockaddr*)&client_addr, &client_addr_len);
+            selector.addReadSocket(client);
+            setupsocket(client);
+        }
+        else if (s == socket_udp)
+        {
+            readUdpSocket(s);
+        }
+        else
+        {
+            readTcpSocket(s);
+        }
     }
 
-    static void pollfds_del(fd_set* set, SOCKET fd)
+    // ISocketHandler
+    virtual void socketReadyWrite(SOCKET s)
     {
-        FD_CLR(fd, set);
+        if (s == socket_udp)
+        {
+            writeUdpSocket(s);
+        }
+        else if (s != socket_tcp)
+        {
+            writeTcpSocket(s);
+        }
     }
 
     void process()
     {
-        u_long mode = 1;  // 1 to enable non-blocking socket
-
-        fd_set readfds_work;
-        fd_set writefds_work;
-
-        FD_ZERO(&readfds);
-        FD_ZERO(&writefds);
-
         sockaddr_in server = { 0 };
         server.sin_family = AF_INET;
         server.sin_addr.s_addr = INADDR_ANY;
         server.sin_port = htons(port);
 
         // UDP socket
-        SOCKET socket_udp = 0;
         if ((socket_udp = socket(AF_INET, SOCK_DGRAM, 0)) == INVALID_SOCKET)
         {
             throw std::runtime_error("Create UDP socket failed");
         }
-
-        ioctlsocket(socket_udp, FIONBIO, &mode);
+        setupsocket(socket_udp);
         if (bind(socket_udp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
         {
+            std::cerr << "Bind error:" << errno << std::endl;
             throw std::runtime_error("Bind UDP socket failed");
         }
-        pollfds_add(&readfds, socket_udp);
+        selector.addReadSocket(socket_udp);
 
         // TCP socket
-        SOCKET socket_tcp = 0;
         if ((socket_tcp = socket(AF_INET, SOCK_STREAM, 0)) == INVALID_SOCKET)
         {
             throw std::runtime_error("Create TCP socket failed");
         }
-        ioctlsocket(socket_tcp, FIONBIO, &mode);
+        setupsocket(socket_tcp);
         if (bind(socket_tcp, (sockaddr*)&server, sizeof(server)) == SOCKET_ERROR)
         {
-            throw std::runtime_error("Bind UDP socket failed");
+            throw std::runtime_error("Bind TCP socket failed");
         }
         listen(socket_tcp, 5);
-        pollfds_add(&readfds, socket_tcp);
+        selector.addReadSocket(socket_tcp);
 
         canExit = false;
         while (!canExit)
         {
-            readfds_work = readfds;
-            writefds_work = writefds;
-
-            int res = select(0, &readfds_work, &writefds_work, NULL, NULL);
-            if (res == -1)
-            {
-                int code = WSAGetLastError();
-                continue;
-            }
-
-            for (auto i = 0u; i < readfds_work.fd_count; i++)
-            {
-                SOCKET fd = readfds_work.fd_array[i];
-                if (fd == socket_tcp)
-                {
-                    struct sockaddr_storage client_addr;
-                    socklen_t client_addr_len = sizeof(client_addr);
-                    SOCKET client = accept(fd, (struct sockaddr*)&client_addr, &client_addr_len);
-                    pollfds_add(&readfds, client);
-                    u_long mode = 1;  // 1 to enable non-blocking socket
-                    ioctlsocket(client, FIONBIO, &mode);
-                }
-                else if (fd == socket_udp)
-                {
-                    readUdpSocket(fd);
-                }
-                else
-                {
-                    readTcpSocket(fd);
-                }
-            }
-            for (auto i = 0u; i < writefds_work.fd_count; i++)
-            {
-                SOCKET fd = writefds_work.fd_array[i];
-                if (fd == socket_udp) // client socket
-                {
-                    writeUdpSocket(fd);
-                }
-                else if (fd != socket_tcp)
-                {
-                    writeTcpSocket(fd);
-                }
-            }
+            selector.select();
         }
 
         closeUdpSocket(socket_udp);
-        closeTcpSocket(socket_tcp);
         for (auto it = tcp_socket_data.begin(); it != tcp_socket_data.end();)
         {
             closeTcpSocket(it->first);
             it = tcp_socket_data.erase(it);
         }
+        closeTcpSocket(socket_tcp);
     }
 
 public:
     DNSServerImpl(const std::string& host, int port)
-        : wsa{0}
+        : selector(this)
         , host(host)
         , port(port)
+        , socket_udp(INVALID_SOCKET)
+        , socket_tcp(INVALID_SOCKET)
+#ifdef _WIN32
+        , wsa{0}
+#endif
     {
+#ifdef _WIN32
         if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) 
         {
             throw std::runtime_error("WSAStartup() failed");
         }
+#endif
     }
 
     void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
@@ -395,7 +386,7 @@ public:
     }
 
 private:
-    WSADATA wsa;
+    DNSSelector selector;
     std::string host;
     int port;
     SOCKET socket_udp, socket_tcp;
@@ -406,6 +397,9 @@ private:
     fd_set writefds;
     std::thread thread;
     bool canExit;
+#ifdef _WIN32
+    WSADATA wsa;
+#endif
 };
 
 DNSServer::DNSServer(const std::string& host, int port)
@@ -496,12 +490,11 @@ DNSPackage DNSClient::requestUdp(uint16_t id, DNSRecordType type, const std::str
     sockaddr_in server = { 0 };
     server.sin_family = AF_INET;
     server.sin_port = htons(port);
-    inet_pton(AF_INET, this->host.c_str(), &server.sin_addr.S_un.S_addr);
+    inet_pton(AF_INET, this->host.c_str(), &server.sin_addr);
 
     int bytes_sent = sendto(s, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0, reinterpret_cast<sockaddr*>(&server), static_cast<int>(sizeof(server)));
     if (bytes_sent < buf.result.size())
     {
-        int code = WSAGetLastError();
         throw std::runtime_error("Error sending UDP data");
     }
     
@@ -509,7 +502,6 @@ DNSPackage DNSClient::requestUdp(uint16_t id, DNSRecordType type, const std::str
     int bytes_received = recvfrom(s, reinterpret_cast<char*>(&in_buf[0]), static_cast<int>(in_buf.size()), 0, nullptr, nullptr);
     if (bytes_received < 0)
     {
-        int code = WSAGetLastError();
         throw std::runtime_error("Error receiving UDP data");
     }
 
@@ -541,7 +533,7 @@ DNSPackage DNSClient::requestTcp(uint16_t id, DNSRecordType type, const std::str
     sockaddr_in server = { 0 };
     server.sin_family = AF_INET;
     server.sin_port = htons(port);
-    inet_pton(AF_INET, this->host.c_str(), &server.sin_addr.S_un.S_addr);
+    inet_pton(AF_INET, this->host.c_str(), &server.sin_addr);
 
     int result = connect(s, reinterpret_cast<sockaddr*>(&server), sizeof(server));
     if (result == SOCKET_ERROR) {
@@ -551,7 +543,6 @@ DNSPackage DNSClient::requestTcp(uint16_t id, DNSRecordType type, const std::str
     int bytes_sent = send(s, reinterpret_cast<const char*>(&buf.result[0]), static_cast<int>(buf.result.size()), 0);
     if (bytes_sent < buf.result.size())
     {
-        int code = WSAGetLastError();
         throw std::runtime_error("Error sending TCP data");
     }
 
@@ -559,7 +550,6 @@ DNSPackage DNSClient::requestTcp(uint16_t id, DNSRecordType type, const std::str
     int bytes_received = recv(s, reinterpret_cast<char*>(&in_buf[0]), static_cast<int>(in_buf.size()), 0);
     if (bytes_received < 0)
     {
-        int code = WSAGetLastError();
         throw std::runtime_error("Error receiving TCP data");
     }
 
@@ -569,7 +559,6 @@ DNSPackage DNSClient::requestTcp(uint16_t id, DNSRecordType type, const std::str
     bytes_received = recv(s, reinterpret_cast<char*>(&in_buf[sizeof(uint16_t)]), static_cast<int>(size), 0);
     if (bytes_received < 0)
     {
-        int code = WSAGetLastError();
         throw std::runtime_error("Error receiving TCP data");
     }
 
@@ -590,7 +579,7 @@ bool DNSClient::command(const std::string& cmd)
     sockaddr_in server = {0};
     server.sin_family = AF_INET;
     server.sin_port = htons(port);
-    inet_pton(AF_INET, host.c_str(), &server.sin_addr.S_un.S_addr);
+    inet_pton(AF_INET, host.c_str(), &server.sin_addr);
 
     int length = sendto(s, cmd.c_str(), static_cast<int>(cmd.size()), 0, reinterpret_cast<sockaddr*>(&server), static_cast<int>(sizeof(server)));
  

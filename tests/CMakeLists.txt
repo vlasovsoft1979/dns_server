@@ -1,6 +1,7 @@
 enable_testing()
 
 find_package(GTest REQUIRED)
+find_package(Threads REQUIRED)
 
 add_executable(
   tst_dns

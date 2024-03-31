@@ -2,10 +2,19 @@
     "version": 3,
     "configurePresets": [
         {
-            "name": "default",
-            "binaryDir": "$env{BUILD_ROOT}/dns_server",
+            "name": "windows-dbg",
+            "binaryDir": "C:/build/dns_server",
             "cacheVariables": {
-                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+            }
+        },
+        {
+            "name": "linux-dbg",
+            "binaryDir": "/home/sergv/Documents/build/dns_server",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_TOOLCHAIN_FILE": "/home/sergv/Documents/vcpkg/scripts/buildsystems/vcpkg.cmake"
             }
         }
     ]
