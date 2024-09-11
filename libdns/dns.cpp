@@ -12,6 +12,7 @@
 #include <fstream>
 #include <algorithm>
 #include <thread>
+#include <sstream>
 #include <json/json.h>
 
 #include "dns_utils.h"
@@ -220,11 +221,28 @@ class DNSServerImpl: private ISocketHandler
     {
         DNSPackage package(query);
 
+        if (logger)
+        {
+            std::stringstream stream;
+            stream << "Processing query [" << package.header.ID << "]: "
+                   << package.requests.size() << " request(s)";
+            logger->log(stream.str().c_str());
+        }
+
         package.header.flags.QR = 1; // answer
         package.header.flags.RA = 1; // supports recursion
         package.header.flags.RCODE = static_cast<uint16_t>(DNSResultCode::NoError);
         for (const auto& query : package.requests)
         {
+            if (logger)
+            {
+                std::stringstream stream;
+                stream << "Processing request [" << package.header.ID
+                       << "]: type=" << RecTypeToStr(static_cast<DNSRecordType>(query.type)) 
+                       << ", name=" << query.name;
+                logger->log(stream.str().c_str());
+            }
+
             DNSRecordType type = static_cast<DNSRecordType>(query.type);
             Request req{ type, query.name };
             const auto iter = table.find(req);
@@ -264,6 +282,16 @@ class DNSServerImpl: private ISocketHandler
             package.header.flags.TC = 1; // truncated
             buf.clear();
             package.append(buf);
+        }
+
+        if (logger)
+        {
+            std::stringstream stream;
+            stream << "Sending result: ["
+                   << package.header.ID << "]: "
+                   << package.answers.size() << " answer(s), result=" 
+                   << ResultCodeToStr(static_cast<DNSResultCode>(package.header.flags.RCODE));
+            logger->log(stream.str().c_str());
         }
     }
 
@@ -308,6 +336,11 @@ class DNSServerImpl: private ISocketHandler
     {
         try
         {
+            if (logger)
+            {
+                logger->log("DNS server started!");
+            }
+
             sockaddr_in server = { 0 };
             server.sin_family = AF_INET;
             server.sin_addr.s_addr = INADDR_ANY;
@@ -344,9 +377,14 @@ class DNSServerImpl: private ISocketHandler
                 selector.select();
             }
         }
-        catch(const std::exception&)
+        catch(const std::exception& e)
         {
-            // TODO: exception handling
+            if (logger)
+            {
+                std::stringstream stream;
+                stream << "DNS server error: " << e.what();
+                logger->log(stream.str().c_str());
+            }
         }
 
         // cleanup
@@ -356,15 +394,21 @@ class DNSServerImpl: private ISocketHandler
             closeTcpSocket(elem.first);
         }
         closeTcpSocket(socket_tcp);
+
+        if (logger)
+        {
+            logger->log("DNS server finished!");
+        }
     }
 
 public:
-    DNSServerImpl(const std::string& host, int port)
+    DNSServerImpl(const std::string& host, int port, ILogger* logger)
         : selector(this)
         , host(host)
         , port(port)
         , socket_udp(INVALID_SOCKET)
         , socket_tcp(INVALID_SOCKET)
+        , logger(logger)
 #ifdef _WIN32
         , wsa{0}
     {
@@ -404,16 +448,17 @@ private:
     fd_set writefds;
     std::thread thread;
     bool canExit;
+    ILogger* logger;
 #ifdef _WIN32
     WSADATA wsa;
 #endif
 };
 
-DNSServer::DNSServer(const std::string& host, int port)
-    : impl(new DNSServerImpl{host, port})
+DNSServer::DNSServer(const std::string& host, int port, ILogger* logger)
+    : impl(new DNSServerImpl{host, port, logger})
 {}
 
-DNSServer::DNSServer(const std::string& jsonFile)
+DNSServer::DNSServer(const std::string& jsonFile, ILogger* logger)
 {
     Json::Value root;
     std::ifstream ifs(jsonFile.c_str());
@@ -430,7 +475,7 @@ DNSServer::DNSServer(const std::string& jsonFile)
     std::string ip = root.get("ip", "127.0.0.1").asString();
     int port = root.get("port", 10000).asInt();
 
-    impl.reset(new DNSServerImpl{ ip, port });
+    impl.reset(new DNSServerImpl{ ip, port, logger });
 
     const Json::Value records = root["records"];
     for (auto index = 0u; index < records.size(); ++index)

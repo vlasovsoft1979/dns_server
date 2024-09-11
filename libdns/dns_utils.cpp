@@ -106,6 +106,44 @@ DNSRecordType StrToRecType(const std::string& str)
     return iter != map.end() ? iter->second : DNSRecordType::OTHER;
 }
 
+std::string RecTypeToStr(DNSRecordType type)
+{
+    switch(type)
+    {
+    case DNSRecordType::A:
+        return "A";
+    case DNSRecordType::CNAME:
+        return "CNAME";
+    case DNSRecordType::PTR:
+        return "PTR";
+    case DNSRecordType::MX:
+        return "MX";
+    case DNSRecordType::TXT:
+        return "TXT";
+    }
+    return "UNKNOWN";
+}
+
+std::string ResultCodeToStr(DNSResultCode code)
+{
+    switch(code)
+    {
+    case DNSResultCode::NoError:
+        return "NoError";
+    case DNSResultCode::FormatError:
+        return "FormatError";
+    case DNSResultCode::ServerFailure:
+        return "ServerFailure";
+    case DNSResultCode::NameError:
+        return "NameError";
+    case DNSResultCode::NotImplemented:
+        return "NotImplemented";
+    case DNSResultCode::Refused:
+        return "Refused";
+    }
+    return "UNKNOWN";
+}
+
 bool str_to_ipv4(const std::string& val, uint8_t out[4])
 {
     return 0 != inet_pton(AF_INET, val.c_str(), out);

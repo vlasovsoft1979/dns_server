@@ -3,6 +3,15 @@
 
 #include "dns.h"
 
+class LoggerImpl: public ILogger
+{
+public:
+    void log(const char* msg) override
+    {
+        std::cout << msg << std::endl;
+    }
+};
+
 int main(int argc, char* argv[]) 
 {
     if (argc != 2)
@@ -13,7 +22,8 @@ int main(int argc, char* argv[])
 
     try
     {
-        DNSServer server(argv[1]);
+        LoggerImpl logger;
+        DNSServer server(argv[1], &logger);
         server.start();
         server.join();
     }

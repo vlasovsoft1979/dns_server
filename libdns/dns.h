@@ -10,11 +10,17 @@
 
 class DNSServerImpl;
 
+class ILogger
+{
+public:
+    virtual void log(const char* msg) = 0;
+};
+
 class DNSServer
 {
 public:
-    DNSServer(const std::string& host, int port);
-    DNSServer(const std::string& json);
+    DNSServer(const std::string& host, int port, ILogger* logger = nullptr);
+    DNSServer(const std::string& json, ILogger* logger = nullptr);
     ~DNSServer();
 
     void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer);
