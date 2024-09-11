@@ -40,6 +40,19 @@ class DNSServerImpl: private ISocketHandler
         }
     };
 
+    struct Response
+    {
+        DNSResultCode result;
+        std::vector<std::string> records;
+        Response()
+            : result(DNSResultCode::NoError)
+        {}
+        Response(DNSResultCode result, const std::vector<std::string>& records)
+            : result(result)
+            , records(records)
+        {}
+    };
+
     struct TcpSocketContext
     {
         std::vector<uint8_t> request;
@@ -248,10 +261,11 @@ class DNSServerImpl: private ISocketHandler
             const auto iter = table.find(req);
             if (iter != table.end())
             {
-                for (const auto& item : iter->second)
+                for (const auto& item : iter->second.records)
                 {
                     package.addAnswer(type, query.name, item);
                 }
+                package.header.flags.RCODE = static_cast<uint16_t>(iter->second.result);
             }
             else
             {
@@ -419,9 +433,9 @@ public:
 {}
 #endif
 
-    void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
+    void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer, DNSResultCode result)
     {
-        table[Request(type, host)] = answer;
+        table[Request(type, host)] = Response(result, answer);
     }
 
     void start()
@@ -439,7 +453,7 @@ private:
     std::string host;
     int port;
     SOCKET socket_udp, socket_tcp;
-    std::map<Request, std::vector<std::string> > table;
+    std::map<Request, Response> table;
     std::map<SOCKET, TcpSocketContext> tcp_socket_data;
     UdpSocketContext udp_socket_data;
     fd_set readfds;
@@ -484,22 +498,23 @@ DNSServer::DNSServer(const std::string& jsonFile, ILogger* logger)
             throw std::runtime_error("Error parsing json file: wrong DNS record type");
         }
         std::string host = records[index].get("host", "").asString();
+        DNSResultCode result = ::StrToResultCode(records[index].get("result", "").asString());
         const Json::Value response = records[index]["response"];
         std::vector<std::string> answers;
         for (auto i = 0u; i < response.size(); ++i)
         {
             answers.push_back(response[i].asString());
         }
-        addRecord(type, host, answers);
+        addRecord(type, host, answers, result);
     }
 }
 
 DNSServer::~DNSServer()
 {}
 
-void DNSServer::addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer)
+void DNSServer::addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer, DNSResultCode result)
 {
-    impl->addRecord(type, host, answer);
+    impl->addRecord(type, host, answer, result);
 }
 
 void DNSServer::start()

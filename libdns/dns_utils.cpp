@@ -124,6 +124,20 @@ std::string RecTypeToStr(DNSRecordType type)
     return "UNKNOWN";
 }
 
+DNSResultCode StrToResultCode(const std::string& str)
+{
+    static const std::unordered_map<std::string, DNSResultCode> map = {
+        {"NoError", DNSResultCode::NoError},
+        {"FormatError", DNSResultCode::FormatError},
+        {"ServerFailure", DNSResultCode::ServerFailure},
+        {"NameError", DNSResultCode::NameError},
+        {"NotImplemented", DNSResultCode::NotImplemented},
+        {"Refused", DNSResultCode::Refused},
+    };
+    const auto iter = map.find(str);
+    return iter != map.end() ? iter->second : DNSResultCode::NoError;
+}
+
 std::string ResultCodeToStr(DNSResultCode code)
 {
     switch(code)

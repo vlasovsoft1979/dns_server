@@ -17,6 +17,7 @@ void append_uint32(std::vector<uint8_t>& buf, uint32_t val);
 DNSRecordType StrToRecType(const std::string& str);
 std::string RecTypeToStr(DNSRecordType type);
 
+DNSResultCode StrToResultCode(const std::string& str);
 std::string ResultCodeToStr(DNSResultCode code);
 
 bool str_to_ipv4(const std::string& val, uint8_t out[4]);

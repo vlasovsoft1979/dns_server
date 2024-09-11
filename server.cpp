@@ -14,16 +14,11 @@ public:
 
 int main(int argc, char* argv[]) 
 {
-    if (argc != 2)
-    {
-        std::cerr << "usage: dns_server <file.json>" << std::endl;
-        return 1;
-    }
-
+    const char* cfg = argc >= 2 ? argv[1] : "dns_server.json";
     try
     {
         LoggerImpl logger;
-        DNSServer server(argv[1], &logger);
+        DNSServer server(cfg, &logger);
         server.start();
         server.join();
     }

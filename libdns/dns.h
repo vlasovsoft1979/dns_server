@@ -24,7 +24,7 @@ public:
     DNSServer(const std::string& json, ILogger* logger = nullptr);
     ~DNSServer();
 
-    void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer);
+    void addRecord(DNSRecordType type, const std::string& host, const std::vector<std::string>& answer, DNSResultCode result = DNSResultCode::NoError);
     void start();
     void join();
 
