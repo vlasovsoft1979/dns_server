@@ -4,6 +4,7 @@
 #include <string>
 #include <memory>
 #include <map>
+#include <iosfwd>
 
 #include "dns_consts.h"
 #include "dns_package.h"
@@ -13,7 +14,7 @@ class DNSServerImpl;
 class ILogger
 {
 public:
-    virtual void log(const char* msg) = 0;
+    virtual std::ostream& log() = 0;
 };
 
 class DNSServer

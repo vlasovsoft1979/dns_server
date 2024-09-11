@@ -6,9 +6,9 @@
 class LoggerImpl: public ILogger
 {
 public:
-    void log(const char* msg) override
+    std::ostream& log() override
     {
-        std::cout << msg << std::endl;
+        return std::cout;
     }
 };
 

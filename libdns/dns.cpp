@@ -223,10 +223,10 @@ class DNSServerImpl: private ISocketHandler
 
         if (logger)
         {
-            std::stringstream stream;
-            stream << "Processing query [" << package.header.ID << "]: "
-                   << package.requests.size() << " request(s)";
-            logger->log(stream.str().c_str());
+            logger->log() 
+                << "Processing query [" << package.header.ID << "]: "
+                << package.requests.size() << " request(s)"
+                << std::endl;
         }
 
         package.header.flags.QR = 1; // answer
@@ -236,11 +236,11 @@ class DNSServerImpl: private ISocketHandler
         {
             if (logger)
             {
-                std::stringstream stream;
-                stream << "Processing request [" << package.header.ID
-                       << "]: type=" << RecTypeToStr(static_cast<DNSRecordType>(query.type)) 
-                       << ", name=" << query.name;
-                logger->log(stream.str().c_str());
+                logger->log()
+                    << "Processing request [" << package.header.ID
+                    << "]: type=" << RecTypeToStr(static_cast<DNSRecordType>(query.type)) 
+                    << ", name=" << query.name
+                    << std::endl;
             }
 
             DNSRecordType type = static_cast<DNSRecordType>(query.type);
@@ -286,12 +286,12 @@ class DNSServerImpl: private ISocketHandler
 
         if (logger)
         {
-            std::stringstream stream;
-            stream << "Sending result: ["
-                   << package.header.ID << "]: "
-                   << package.answers.size() << " answer(s), result=" 
-                   << ResultCodeToStr(static_cast<DNSResultCode>(package.header.flags.RCODE));
-            logger->log(stream.str().c_str());
+            logger->log()
+                << "Sending result: ["
+                << package.header.ID << "]: "
+                << package.answers.size() << " answer(s), result=" 
+                << ResultCodeToStr(static_cast<DNSResultCode>(package.header.flags.RCODE))
+                << std::endl;
         }
     }
 
@@ -338,7 +338,7 @@ class DNSServerImpl: private ISocketHandler
         {
             if (logger)
             {
-                logger->log("DNS server started!");
+                logger->log() << "DNS server started!" << std::endl;
             }
 
             sockaddr_in server = { 0 };
@@ -381,9 +381,7 @@ class DNSServerImpl: private ISocketHandler
         {
             if (logger)
             {
-                std::stringstream stream;
-                stream << "DNS server error: " << e.what();
-                logger->log(stream.str().c_str());
+                logger->log() << "DNS server error: " << e.what() << std::endl;
             }
         }
 
@@ -397,7 +395,7 @@ class DNSServerImpl: private ISocketHandler
 
         if (logger)
         {
-            logger->log("DNS server finished!");
+            logger->log() << "DNS server finished!" << std::endl;
         }
     }
 
